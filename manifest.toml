@@ -1,0 +1,35 @@
+manifestVersion = "0"
+# appId = ASCII "cake-xmr-signer!" (exactly 16 bytes / 0x + 32 hex).
+appId = "0x63616b652d786d722d7369676e657221"
+
+# Route an inbound "xmr-txunsigned" UR (the animated QR Cake mobile shows when
+# you tap Send on the watch-only wallet) to this signer. The app also opens the
+# scanner directly from Home, so this is for launcher-initiated scans.
+[[qrMatchRules]]
+id = "xmr-txunsigned"
+idLocalizations = { en = "Monero Unsigned Transaction" }
+subRules = { ur = { UR = { ur_type = "xmr-txunsigned" } } }
+
+[appName]
+en = "Cake"
+
+[permissions]
+template = ["gui-app", "fs-generic"]
+# Spend/view keys are derived from this app's per-app seed (never leaves KeyOS).
+"os/security" = ["GetAppSeed"]
+# fs-generic grants the file *operations*; these grant the locations. The
+# easiest-path transport is microSD/USB file exchange with the Cake Wallet
+# mobile view-only wallet:
+#   - import  unsigned_monero_tx   (built by Cake mobile)
+#   - export  signed_monero_tx     (broadcast by Cake mobile)
+#   - export  monero_key_images    (so the watch-only wallet sees what's spent)
+#   - export  monero_view_only     (one-time: address + private view key)
+# Read+write on all three locations or the file picker returns AccessDenied.
+"os/fs" = [
+    "GetAirlockReadAccess",
+    "GetAirlockWriteAccess",
+    "GetUserReadAccess",
+    "GetUserWriteAccess",
+    "GetUsbReadAccess",
+    "GetUsbWriteAccess",
+]

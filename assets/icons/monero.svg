@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+  <!-- Monero "ɱ" monogram: two outer pillars + central V notch. Single fill so
+       the Icon widget can tint it (rendered in Cake.monero / Monero orange). -->
+  <path fill="#141414" d="M170,760 L170,240 L340,240 L500,470 L660,240 L830,240 L830,760 L685,760 L685,505 L560,685 L440,685 L315,505 L315,760 Z"/>
+</svg>

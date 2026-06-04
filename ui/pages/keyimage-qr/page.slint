@@ -1,0 +1,59 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, AnimatedQrCode } from "@ui/widgets.slint";
+import { Palette, Size, Importance } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { KeyimageQrPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+// Answer to Cake's key-image sync: show the key images as an animated UR QR
+// (ur_type "xmr-keyimage"). Cake scans it, learns which outputs are spent, and
+// can then build the unsigned transaction.
+export component KeyimageQrPagePage inherits Rectangle {
+    in property <KeyimageQrPageProps> props;
+    background: Cake.background;
+
+    // Built once + stored (so the fountain encoder advances, not resets per frame).
+    property <[string]> ki-parts: Callbacks.get-keyimage-ur(400);
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: TR2.lookup(TrId.KeyimageQrTitle);
+                left-icon: "chevron-left";
+                clicked => { Navigate.home-page({ }); }
+            }
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+                    TextMd {
+                        text: TR2.lookup(TrId.KeyimageQrSubtitle);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        AnimatedQrCode {
+                            parts: ki-parts;
+                            interval: 300ms;
+                            animate: true;
+                        }
+                    }
+                }
+                ButtonSection {
+                    Button {
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => { Navigate.home-page({ }); }
+                    }
+                }
+            }
+        }
+    }
+}

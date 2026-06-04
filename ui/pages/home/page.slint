@@ -1,0 +1,118 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, TextSm, BasePage, PageBody, JumboIcon, Icon, IconButton, OverlayMenu, PopupMenuItem } from "@ui/widgets.slint";
+import { Palette, Size, Importance, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { HomePageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+// Cake Wallet offline signer — home. Passport is the COLD wallet (holds the
+// Monero spend key, never online); Cake mobile is the watch-only wallet. The
+// overflow menu (top right) holds the recovery seed; the main CTAs are Sign
+// (scan Cake's unsigned tx) and Pair with Cake.
+export component HomePagePage inherits Rectangle {
+    in property <HomePageProps> props;
+    property <bool> is-menu-open: false;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            // Slim top bar: overflow menu only (no title, so content sits high).
+            HorizontalLayout {
+                alignment: end;
+                padding-top: Size.sz4;
+                padding-right: Size.sz6;
+                IconButton {
+                    icon: "ellipsis";
+                    size: Size.sz8;
+                    importance: Importance.normal;
+                    clicked => { is-menu-open = !is-menu-open; }
+                }
+            }
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz3;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        JumboIcon {
+                            name: "jumbo-circle";
+                            Icon {
+                                name: "cake"; // ui/ui/icons/cake.svg (Cake Wallet mark)
+                                size: IconSize.px96;
+                                color: Cake.blue;
+                            }
+                        }
+                    }
+                    HeadingLg {
+                        text: TR2.lookup(TrId.HomeTitle);
+                        horizontal-alignment: center;
+                    }
+                    TextMd {
+                        text: TR2.lookup(TrId.HomeSubtitle);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    // Sign: opens the camera, scans Cake's unsigned-tx QR, then
+                    // goes to review → sign.
+                    Button {
+                        label: TR2.lookup(TrId.HomeSignTransaction);
+                        importance: Importance.normal;
+                        clicked => {
+                            Callbacks.scan-unsigned-tx();
+                            // Cake's flow: first an output/key-image sync, then the
+                            // unsigned tx. Route to whichever the scan produced.
+                            if Callbacks.tx-loaded {
+                                Navigate.review-page({ });
+                            } else if Callbacks.keyimages-ready {
+                                Navigate.keyimage-qr-page({ });
+                            }
+                        }
+                    }
+                    // Primary CTA at the bottom: one-time pairing QR for Cake.
+                    Button {
+                        label: TR2.lookup(TrId.HomePairQr);
+                        importance: Importance.primary;
+                        clicked => {
+                            Callbacks.prepare-pair-qr();
+                            Navigate.pair-page({ });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Overflow menu: recovery seed lives here, not on the main screen.
+        if is-menu-open: OverlayMenu {
+            touched-off => {
+                is-menu-open = false;
+            }
+            PopupMenuItem {
+                label: TR2.lookup(TrId.MenuViewSeed);
+                icon: "eye";
+                first: true;
+                last: true;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.prepare-seed-words();
+                    Navigate.seed-page({ });
+                }
+            }
+        }
+    }
+}

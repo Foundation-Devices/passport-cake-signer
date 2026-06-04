@@ -1,0 +1,71 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, AnimatedQrCode } from "@ui/widgets.slint";
+import { Palette, Size, Importance } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { SignedQrPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+// Hand the signed transaction back to Cake as an ANIMATED UR QR
+// (ur_type "xmr-txsigned"). Rust returns animated UR parts over the CBOR-wrapped
+// wallet2 signed_tx_set.
+export component SignedQrPagePage inherits Rectangle {
+    in property <SignedQrPageProps> props;
+    background: Cake.background;
+
+    // Built once + stored (so the fountain encoder advances, not resets per frame).
+    property <[string]> signed-parts: Callbacks.get-signed-ur(400);
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: TR2.lookup(TrId.SignedQrTitle);
+                left-icon: "chevron-left";
+                clicked => { Navigate.home-page({ }); }
+            }
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+                    TextMd {
+                        text: TR2.lookup(TrId.SignedQrSubtitle);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        AnimatedQrCode {
+                            parts: signed-parts;
+                            interval: 300ms;
+                            animate: true;
+                        }
+                    }
+                    if Callbacks.status-text != "": TextMd {
+                        text: Callbacks.status-text;
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+                ButtonSection {
+                    Button {
+                        label: "Save to file";
+                        importance: Importance.normal;
+                        enabled: Callbacks.signed-ok;
+                        clicked => { Callbacks.save-signed-tx(); }
+                    }
+                    Button {
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => { Navigate.home-page({ }); }
+                    }
+                }
+            }
+        }
+    }
+}

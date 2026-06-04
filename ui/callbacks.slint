@@ -1,0 +1,68 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Bridge between the Rust app (src/main.rs) and the Slint UI. The Rust side
+// sets the properties and handles the callbacks; the pages read/invoke them.
+export global Callbacks {
+    // --- One-time pairing -------------------------------------------------
+    // Export this Passport's Monero view-only credentials (primary address +
+    // private view key) to SD/USB so Cake Wallet mobile can create the
+    // watch-only wallet that pairs with this signer.
+    callback export-view-only();
+
+    // Export current key images so the watch-only wallet knows which outputs
+    // are already spent.
+    callback export-key-images();
+
+    // --- QR transport (CupCake-compatible) --------------------------------
+    // Build the view-only pairing JSON and stash it in `pair-json` for the
+    // pairing page's static QR. Cake "Restore › Cupcake App" scans it.
+    callback prepare-pair-qr();
+    // The pairing payload: {label, version, primaryAddress, privateViewKey,
+    // restoreHeight} JSON, rendered as a single static QR.
+    in-out property <string> pair-json;
+
+    // Animated UR frames for the just-signed tx (ur_type "xmr-txsigned").
+    // DynamicQrCode calls this with the max QR size; we return the parts model.
+    // `pure` so it can be invoked from DynamicQrCode's pure get-parts callback.
+    pure callback get-signed-ur(int) -> [string];
+
+    // Scan an animated UR from Cake. If it's an "xmr-output" key-image sync,
+    // builds the key images and sets keyimages-ready; if it's an "xmr-txunsigned"
+    // tx, populates the review properties and sets tx-loaded.
+    callback scan-unsigned-tx();
+    // Set true after a key-image sync scan; the UI then shows the key-image QR.
+    in-out property <bool> keyimages-ready;
+    // Animated UR frames for the key images (ur_type "xmr-keyimage"). `pure` so
+    // DynamicQrCode's get-parts can call it.
+    pure callback get-keyimage-ur(int) -> [string];
+
+    // Populate `seed-words` with the wallet's 16-word Polyseed recovery phrase
+    // for the (gated) Show-seed screen. Secret material — shown only on demand.
+    callback prepare-seed-words();
+    callback clear-seed-words();
+    in-out property <string> seed-words;
+
+    // --- Signing flow -----------------------------------------------------
+    // Import an unsigned_monero_tx file (built by the Cake mobile watch-only
+    // wallet) from a file picker. Populates the review properties below.
+    callback import-unsigned-tx();
+
+    // Sign the loaded unsigned tx with the app-seed spend key and cache the
+    // signed_monero_tx for QR display. Saving to file is explicit.
+    callback sign-transaction();
+
+    // Write the cached signed_monero_tx through the file picker.
+    callback save-signed-tx();
+
+    // --- Review properties (set by Rust after import) ---------------------
+    in-out property <string> primary-address;       // truncated, for display
+    in-out property <string> amount-xmr;            // real amount sent (excl change), formatted
+    in-out property <string> change-xmr;            // change returned to this wallet, formatted
+    in-out property <string> fee-xmr;               // network fee, formatted ("—" until computed)
+    in-out property <string> dest-address;          // recipient, truncated
+    in-out property <int>    output-count;
+    in-out property <bool>   tx-loaded;             // gate the Sign button
+    in-out property <bool>   signed-ok;             // true only if signing actually succeeded
+    in-out property <string> status-text;           // error / progress line
+}

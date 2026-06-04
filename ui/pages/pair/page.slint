@@ -1,0 +1,56 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, QrCodeCard } from "@ui/widgets.slint";
+import { Palette, Size, Importance } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { PairPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+// One-time pairing. Prime shows a STATIC QR of the view-only credentials
+// (primary address + private view key + restore height) as JSON. In Cake
+// Wallet: Restore › Cupcake App scans it and builds the matching watch-only
+// wallet. This is the exact payload CupCake emits (cake-tech/cupcake
+// wallet.dart `pairQrString`).
+export component PairPagePage inherits Rectangle {
+    in property <PairPageProps> props;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: TR2.lookup(TrId.PairTitle);
+                left-icon: "chevron-left";
+                clicked => { Navigate.home-page({ }); }
+            }
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+                    TextMd {
+                        text: TR2.lookup(TrId.PairSubtitle);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        QrCodeCard {
+                            data: Callbacks.pair-json;
+                        }
+                    }
+                }
+                ButtonSection {
+                    Button {
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => { Navigate.home-page({ }); }
+                    }
+                }
+            }
+        }
+    }
+}

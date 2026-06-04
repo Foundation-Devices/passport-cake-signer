@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "gui-app-cake-signer"
+version = "0.1.0"
+edition = "2021"
+authors = ["Foundation Devices, Inc. <hello@foundation.xyz>"]
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# KeyOS plumbing (same set the Liana signer / Bitcoin app pull from the workspace).
+fs = { workspace = true }
+log = { workspace = true }
+log-server = { workspace = true }
+security = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+server = { workspace = true }
+slint-keyos-platform = { path = "../../slint-keyos-platform/runtime" }
+
+# Cross-target utilities
+anyhow = "1"
+base64 = "0.22"
+hex = "0.4"
+# CBOR wrapping for UR (Uniform Resources) animated-QR transport. The UR payload
+# is a single CBOR bytestring of the raw wallet2 blob — the exact wire format
+# CupCake/Cake speak (see src/qr.rs). Matches the Bitcoin app's minicbor pin.
+minicbor = { version = "0.24", features = ["std", "derive"] }
+
+# --- Monero crypto -------------------------------------------------------
+# Key derivation + address encoding (src/monero/keys.rs + address.rs) are the
+# verified, inlined core (mirrors how the Liana signer inlines its logic from
+# liana-signer-core; here the host-test home is ../monero-cold-core, kept in
+# sync). Both crates below are ALREADY in the KeyOS workspace lock
+# (curve25519-dalek 4.1.3, sha3 0.10.8), so they build for the device target.
+# No randomness is needed (keys derive deterministically from the app seed), so
+# no getrandom-on-xous dependency.
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc"] }
+sha3 = { version = "0.10", default-features = false }
+# Polyseed (16-word Monero seed) — vetted impl by the monero-oxide author. The
+# wallet's keys are derived from a Polyseed seeded by the KeyOS app seed, so this
+# is ALL-TARGET (device + sim must derive the same wallet). no_std (alloc) via
+# default-features = false. Proven in ../../../monero-cold-core (polyseed.rs).
+polyseed = { git = "https://github.com/kayabaNerve/monero-wallet-util", default-features = false }
+# Zeroizing secret material (Polyseed entropy/key); all-target since key
+# derivation runs on device + sim.
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
+# --- Decryption + signing — now ALL-TARGET (runs on the device too) -------
+# wallet2 unsigned_tx_set decryption needs cn_slow_hash (CryptoNight) for the
+# chacha key. Vendored no_std CryptoNight (parity-tested byte-for-byte vs
+# cuprate-cryptonight) so it builds + runs on xous, not just host/sim.
+cryptonight-noxous = { path = "../../../cryptonight-noxous" }
+chacha20 = { version = "0.9", default-features = false }
+# RingCT/CLSAG + Bulletproof+ signing (serai / monero-oxide). no_std (alloc);
+# the signer seeds a deterministic ChaCha20Rng, so no getrandom on xous.
+monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide.git", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+
+[build-dependencies]
+slint-keyos-platform-build = { path = "../../slint-keyos-platform/build", default-features = false }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(keyos)'] }

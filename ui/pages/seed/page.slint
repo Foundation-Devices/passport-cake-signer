@@ -1,0 +1,74 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, NavHeader, Button, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
+import { Palette, Size, Importance } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { SeedPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+// 16-word Polyseed recovery phrase. Derived deterministically from the Passport
+// app seed, so it is reproducible (re-deriving on this device gives the same
+// words) and restores the wallet in Cake / any Polyseed wallet. Secret: only
+// rendered after the user opts in from Home.
+export component SeedPagePage inherits Rectangle {
+    in property <SeedPageProps> props;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: TR2.lookup(TrId.SeedTitle);
+                left-icon: "chevron-left";
+                clicked => {
+                    Callbacks.clear-seed-words();
+                    Navigate.home-page({ });
+                }
+            }
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+                    TextSm {
+                        text: TR2.lookup(TrId.SeedWarning);
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    // The phrase itself, monospace-ish block.
+                    Rectangle {
+                        background: Cake.surface;
+                        border-radius: Size.sz4;
+                        VerticalLayout {
+                            padding: Size.sz5;
+                            TextMd {
+                                text: Callbacks.seed-words;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                    TextSm {
+                        text: TR2.lookup(TrId.SeedSubtitle);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+                ButtonSection {
+                    Button {
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => {
+                            Callbacks.clear-seed-words();
+                            Navigate.home-page({ });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

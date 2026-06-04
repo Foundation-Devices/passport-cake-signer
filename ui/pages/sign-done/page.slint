@@ -1,0 +1,52 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, ShieldPage, JumboIcon, Icon } from "@ui/widgets.slint";
+import { Palette, Size, Importance, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { SignDonePageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component SignDonePagePage inherits Rectangle {
+    in property <SignDonePageProps> props;
+    background: Cake.background;
+
+    ShieldPage {
+        background: Cake.background;
+
+        ContentSection {
+            HorizontalLayout {
+                alignment: center;
+                JumboIcon {
+                    name: "jumbo-circle";
+                    Icon { name: "check"; size: IconSize.px96; color: Cake.success; }
+                }
+            }
+            HeadingLg {
+                text: TR2.lookup(TrId.SignDoneTitle);
+                horizontal-alignment: center;
+            }
+            TextMd {
+                text: TR2.lookup(TrId.SignDoneBody);
+                color: Cake.on-surface-dim;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        ButtonSection {
+            // Hand the signed tx to Cake over the air as an animated UR QR.
+            Button {
+                label: TR2.lookup(TrId.SignedQrShow);
+                importance: Importance.primary;
+                clicked => { Navigate.signed-qr-page({ }); }
+            }
+            Button {
+                label: TR2.lookup(TrId.Done);
+                importance: Importance.normal;
+                clicked => { Navigate.home-page({ }); }
+            }
+        }
+    }
+}
