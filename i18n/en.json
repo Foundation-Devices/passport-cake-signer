@@ -3,7 +3,7 @@
   "home.title": "Cake Wallet Signer",
   "home.subtitle": "This Passport holds your Monero spend key offline. Cake Wallet on your phone builds the transaction; bring it here to sign.",
   "home.pairQr": "Pair with Cake",
-  "home.signTransaction": "Scan Transaction",
+  "home.signTransaction": "Sign Transaction",
   "menu.viewSeed": "View seed",
   "seed.title": "Recovery seed",
   "seed.warning": "Anyone with these 16 words can spend this wallet. Never share them or store them online. Write them down and keep them safe.",

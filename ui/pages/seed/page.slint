@@ -1,13 +1,43 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
+import { ButtonSection, ContentSection, NavHeader, Button, TextLg, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
 import { Palette, Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SeedPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { TR2, TrId } from "../../gen/tr.slint";
 import { Cake } from "../../cake-theme.slint";
+
+component SeedWordItem inherits Rectangle {
+    in property <int> index;
+    in property <string> word;
+
+    height: 52px;
+    width: 222px;
+    background: Cake.surface;
+    border-radius: Size.sz3;
+
+    HorizontalLayout {
+        padding-left: Size.sz3;
+        padding-right: Size.sz3;
+        spacing: Size.sz2;
+
+        TextSm {
+            text: "\{index + 1}.";
+            width: Size.sz8;
+            color: Cake.on-surface-dim;
+            vertical-alignment: center;
+        }
+
+        TextLg {
+            text: word;
+            color: Cake.on-surface;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+    }
+}
 
 // 16-word Polyseed recovery phrase. Derived deterministically from the Passport
 // app seed, so it is reproducible (re-deriving on this device gives the same
@@ -30,27 +60,33 @@ export component SeedPagePage inherits Rectangle {
                 }
             }
             PageBody {
+                p-x: Size.sz2;
+                p-y: Size.sz4;
                 ContentSection {
-                    spacing: Size.sz4;
+                    spacing: Size.sz3;
                     TextSm {
                         text: TR2.lookup(TrId.SeedWarning);
                         color: Cake.warning;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
-                    // The phrase itself, monospace-ish block.
-                    Rectangle {
-                        background: Cake.surface;
-                        border-radius: Size.sz4;
-                        VerticalLayout {
-                            padding: Size.sz5;
-                            TextMd {
-                                text: Callbacks.seed-words;
-                                horizontal-alignment: center;
-                                wrap: word-wrap;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Size.sz2;
+
+                        for row in 8: HorizontalLayout {
+                            alignment: center;
+                            spacing: Size.sz2;
+
+                            for col in 2: SeedWordItem {
+                                property <int> word-index: row + col * 8;
+                                visible: word-index < Callbacks.seed-words.length;
+                                index: word-index;
+                                word: word-index < Callbacks.seed-words.length ? Callbacks.seed-words[word-index] : "";
                             }
                         }
                     }
+
                     TextSm {
                         text: TR2.lookup(TrId.SeedSubtitle);
                         color: Cake.on-surface-dim;

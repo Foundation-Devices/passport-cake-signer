@@ -28,7 +28,7 @@ use slint_keyos_platform::{
         qrscanner::{ScanQrOptions, ScanQrResult},
     },
     navigation::{open_qr_scanner, select_file},
-    slint::ComponentHandle,
+    slint::{ComponentHandle, ModelRc, SharedString, VecModel},
 };
 
 // `app!` injects the permission-parameterized `FileSystem` alias (via
@@ -219,14 +219,18 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             let st = state.lock().unwrap();
             let words = MoneroKeys::seed_words(&st.seed);
             drop(st);
-            ui.global::<Callbacks>().set_seed_words(words.as_str().into());
+            let words = words
+                .split_whitespace()
+                .map(SharedString::from)
+                .collect::<Vec<SharedString>>();
+            ui.global::<Callbacks>().set_seed_words(ModelRc::new(VecModel::from(words)));
         });
     }
     {
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_clear_seed_words(move || {
             let Some(ui) = weak.upgrade() else { return };
-            ui.global::<Callbacks>().set_seed_words("".into());
+            ui.global::<Callbacks>().set_seed_words(ModelRc::<SharedString>::default());
         });
     }
 

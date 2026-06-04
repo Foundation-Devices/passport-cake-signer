@@ -41,7 +41,7 @@ export global Callbacks {
     // for the (gated) Show-seed screen. Secret material — shown only on demand.
     callback prepare-seed-words();
     callback clear-seed-words();
-    in-out property <string> seed-words;
+    in-out property <[string]> seed-words;
 
     // --- Signing flow -----------------------------------------------------
     // Import an unsigned_monero_tx file (built by the Cake mobile watch-only
