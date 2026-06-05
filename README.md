@@ -252,69 +252,100 @@ Do not flash unsigned builds on production hardware.
 
 ## FAQ
 
-### Can Cake Wallet spend funds?
+### What is the shortest explanation of what we built?
 
-No. Cake receives the private view key, not the private spend key. Cake can scan,
-track balances, and build unsigned transactions, but only Prime can sign.
+Passport Prime now behaves like a Cake/CupCake-compatible Monero offline signer.
+Cake Wallet stays the online watch-only wallet. Prime holds the spend key,
+performs the cold-side wallet2 operations, and returns Cake-native signed
+transaction/key-image QR payloads.
 
-### What does Prime actually sign?
+### How did we get here architecturally?
 
-Prime signs a Monero transaction built by Cake's watch-only wallet. The data is a
-standard Monero wallet2 `unsigned_tx_set`, transported as a Cake/CupCake
-animated QR.
+The first viable path was not to design a new Prime/Cake protocol. It was to make
+Prime mimic the cold-side role Cake already expects from CupCake:
 
-### Is this compatible with the public Cake Wallet build?
+- Pair using the same watch-only data Cake can restore.
+- Accept Cake's `xmr-output` key-image sync requests.
+- Return `xmr-keyimage` responses in the format Cake imports.
+- Accept Cake's `xmr-txunsigned` unsigned transaction export.
+- Return `xmr-txsigned` signed transaction data that Cake can scan and broadcast.
 
-Yes. The current demo path uses Cake/CupCake UR types and wallet2 data. A real
-transaction has been signed on Passport Prime, scanned into Cake Wallet, and
-sent.
+That let us keep public Cake Wallet as the online half and focus Prime on the
+offline signer role.
 
-### Why does Cake sometimes ask for a key-image sync before signing?
+### Why not define a cleaner new protocol?
 
-Monero wallets need key images to know which outputs are already spent. A
-watch-only wallet cannot compute them by itself, so Cake asks Prime to compute
-and return them.
+That may be worth doing later, but it would require Cake changes. Mimicking
+CupCake gave us the fastest route to real interop with the public Cake build. It
+also proved the hard parts first: wallet2 parsing, key-image generation, signing,
+and Cake import/broadcast.
 
-### Does Prime expose the private view key?
+### What exactly has been proven on hardware?
 
-Yes, intentionally, for watch-only pairing. The private view key lets Cake see
-wallet activity for that wallet. It does not allow spending.
+Prime has signed a real Monero transaction on hardware. Cake scanned the signed
+QR and sent the transaction successfully. The app also performs Cake's key-image
+sync path on device and has unit coverage for the signer, key-image parsing,
+wallet import, address validation, and QR payload bounds.
 
-### Can users import existing Monero wallets?
+### What are the main remaining technical risks?
 
-Yes. The app supports 16-word Polyseed and 24/25-word legacy Monero mnemonics.
-Seeds can be imported by Cake seed QR, typed text, or UTF-8 text file.
+The biggest risks are compatibility breadth and performance. We need more real
+Cake fixtures across large transactions, multiple recipients, many inputs,
+subaddress-heavy wallets, fresh watch-only wallets, previously synced watch-only
+wallets, and edge cases such as multi-`pending_tx` sets. QR scan time and Monero
+signing latency also need continued profiling.
 
-### Do Prime-derived wallets have their own seeds?
+### Why is QR starting to feel like the limiting factor?
 
-Yes. Each Prime-derived wallet slot has a deterministic 16-word Polyseed. Slot 0
-is the default wallet; additional slots are deterministic children of the KeyOS
-app seed.
+Monero payloads are much larger than typical Bitcoin signing payloads. Cake's
+unsigned transactions, output exports, key-image exports, and signed
+transactions can all span many animated QR frames. The QR path is valuable
+because it works with today's public Cake app, but it is not the ideal high-volume
+transport.
 
-### Are Cake accounts and subaddresses supported?
+### What should the next transport step be?
 
-The app parses Cake transaction account/subaddress metadata and can derive or
-verify Monero subaddresses locally. The Prime UI does not try to become a full
-Monero wallet/account manager; Cake remains the wallet.
+USB is the most obvious near-term improvement. It should be able to move the same
+wallet2 blobs without changing the signing core, while cutting scan friction and
+large-payload failure modes. QuantumLink is the more strategic direction if we
+want a richer Prime-to-phone pairing channel with better UX than animated QR.
 
-### What happens if the wrong Prime wallet is selected?
+### Does adding USB or QuantumLink require rewriting the Monero core?
 
-Prime first tries the selected wallet. If authentication/decryption fails, it
-checks the other local wallet records. If another wallet matches, the app can
-switch to it; otherwise it shows a wrong-wallet error.
+No. The important separation is already in place. `src/monero/*` works on raw
+wallet2 blobs; `src/qr.rs` is only the current transport wrapper. USB or
+QuantumLink should transport the same raw bytes or the same typed payloads, then
+call into the same parse/sign/key-image functions.
 
-### Why can signing feel slow?
+### Why does Cake need the private view key?
 
-Monero RingCT signing is computationally heavy, and wallet2 file encryption uses
-CryptoNight-derived keys. The app caches and warms the CryptoNight key, but
-proof/signature generation and animated QR transfer still take time.
+That is how a Monero watch-only wallet scans and builds transactions. The private
+view key lets Cake discover outputs and construct unsigned transactions, but it
+does not let Cake spend. Prime keeps the private spend key offline.
 
-### Does the app use SeedQR?
+### How does Prime handle wrong-wallet transaction scans?
 
-No. This app uses plain text seed QR import/display for Cake-compatible Monero
-seed handling, not the Bitcoin SeedQR standard.
+Prime first attempts to authenticate/decrypt the unsigned transaction with the
+selected wallet. If that fails, it tries the other local wallet records. If one
+matches, the app can switch context and load the transaction; otherwise it shows
+a wrong-wallet/incomplete-scan error.
 
-### Is this a KeyOS SDK-compliant app?
+### How are multiple wallets represented?
 
-It follows the KeyOS app structure: manifest, `app!` macro, Slint UI, app-seed
-permission, scanner/file APIs, and workspace build integration.
+The app maintains a local wallet book. Device slots are deterministic children of
+the KeyOS app seed. Imported Polyseed and legacy Monero seeds are sealed locally
+with XChaCha20-Poly1305 under a key derived from the app seed. Archive/delete
+operate on wallet records, not on Cake's online wallet state.
+
+### What would need to happen before this becomes production-ready?
+
+The next work should focus on fixture breadth, transport reliability, and
+hardening:
+
+- Add real Cake regression fixtures for every transaction shape we care about.
+- Stress test large input/output sets on hardware.
+- Decide whether USB, QuantumLink, or both become first-class transports.
+- Tighten the UI around long-running signing/sync operations.
+- Audit wallet2 edge cases and Monero metadata preservation.
+- Get Foundation security review on seed storage, app permissions, and transport
+  handling.
