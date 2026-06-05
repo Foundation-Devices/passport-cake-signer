@@ -114,6 +114,7 @@ pub fn pair_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slint_keyos_platform::slint::Model;
 
     #[test]
     fn pair_json_escapes_labels() {
@@ -126,5 +127,15 @@ mod tests {
     fn ur_payload_limited_rejects_oversized_payloads() {
         let oversized = vec![0u8; 33];
         assert!(ur_payload_limited(&oversized, 16).is_err());
+    }
+
+    #[test]
+    fn signed_tx_sized_payload_is_multi_frame_lowercase_ur() {
+        let payload = vec![0x42; 3_000];
+        let parts = ur_parts(UR_TX_SIGNED, &payload, 500);
+        let frames = parts.iter().map(|part| part.to_string()).collect::<Vec<_>>();
+
+        assert!(frames.len() > 1, "expected animated QR, got one frame");
+        assert!(frames.iter().all(|frame| frame.starts_with("ur:xmr-txsigned/")));
     }
 }

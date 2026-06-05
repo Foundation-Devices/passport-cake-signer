@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, AnimatedQrCode } from "@ui/widgets.slint";
+import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, DynamicQrCode } from "@ui/widgets.slint";
 import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
@@ -16,9 +16,6 @@ import { Cake } from "../../cake-theme.slint";
 export component SignedQrPagePage inherits Rectangle {
     in property <SignedQrPageProps> props;
     background: Cake.background;
-
-    // Built once + stored (so the fountain encoder advances, not resets per frame).
-    property <[string]> signed-parts: Callbacks.get-signed-ur(500);
 
     BasePage {
         background: Cake.background;
@@ -40,10 +37,10 @@ export component SignedQrPagePage inherits Rectangle {
                     }
                     HorizontalLayout {
                         alignment: center;
-                        AnimatedQrCode {
-                            parts: signed-parts;
-                            interval: 250ms;
-                            animate: true;
+                        DynamicQrCode {
+                            get-parts(density) => {
+                                Callbacks.get-signed-ur(density);
+                            }
                         }
                     }
                     if Callbacks.status-text != "": TextMd {
