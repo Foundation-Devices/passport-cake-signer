@@ -121,10 +121,11 @@ When Cake requests sync, Prime:
 5. Builds a wallet2 `key_image_export`.
 6. Returns it as `xmr-keyimage` animated QR.
 
-Prime caches output details per wallet during the app session. If Cake sends only
-an incremental suffix and Prime does not have the missing prefix cached, Prime
-asks the user to switch Cake to a full output export rather than returning a
-malformed partial key-image set.
+Prime persists Cake output details per wallet record. If Cake sends only an
+incremental suffix after the coin set changes, Prime combines it with the
+previously synced prefix and returns a full contiguous key-image export. If the
+prefix is missing, Prime refuses the partial response and asks the user to switch
+Cake to a full output export rather than returning a malformed key-image set.
 
 ## Wallet Model
 

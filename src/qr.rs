@@ -83,7 +83,12 @@ pub fn ur_payload_limited(data: &[u8], max_len: usize) -> Result<Vec<u8>, &'stat
 /// Build the CupCake pairing JSON (`pairQrString`): the watch-only credentials
 /// Cake restores from. `restore_height` of 0 means Cake rescans from genesis —
 /// safe but slow; a real birthday height can be threaded in later.
-pub fn pair_json(label: &str, primary_address: &str, private_view_key: &str, restore_height: u64) -> String {
+pub fn pair_json(
+    label: &str,
+    primary_address: &str,
+    private_view_key: &str,
+    restore_height: u64,
+) -> String {
     #[derive(Serialize)]
     struct PairPayload<'a> {
         label: &'a str,

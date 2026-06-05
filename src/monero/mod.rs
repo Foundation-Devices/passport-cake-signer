@@ -70,7 +70,10 @@ impl core::fmt::Display for Error {
             Error::Seed(s) => write!(f, "seed error: {s}"),
             Error::Parse(s) => write!(f, "parse error: {s}"),
             Error::Unsupported(s) => write!(f, "unsupported: {s}"),
-            Error::WrongNetwork => write!(f, "transaction is for a different network than the paired wallet"),
+            Error::WrongNetwork => write!(
+                f,
+                "transaction is for a different network than the paired wallet"
+            ),
             Error::Sign(s) => write!(f, "signing error: {s}"),
         }
     }
@@ -87,7 +90,9 @@ pub enum Network {
 }
 
 impl Default for Network {
-    fn default() -> Self { Network::Stagenet }
+    fn default() -> Self {
+        Network::Stagenet
+    }
 }
 
 impl Network {

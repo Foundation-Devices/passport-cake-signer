@@ -17,6 +17,7 @@ use monero_wallet::{
     ed25519::{CompressedPoint, Point as SeraiPoint},
     ring_signatures::RingSignature,
 };
+use serde::{Deserialize, Serialize};
 
 use super::keccak256;
 use super::keys::{subaddress_secret, MoneroKeys};
@@ -27,7 +28,7 @@ pub const MAGIC_KEY_IMAGES: &[u8] = b"Monero key image export";
 const MAX_OUTPUT_EXPORT_ENTRIES: usize = 4_096;
 const MAX_ADDITIONAL_TX_KEYS: usize = 256;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutEntry {
     pub pubkey: [u8; 32],          // one-time output pubkey P
     pub tx_pubkey: [u8; 32],       // main tx pubkey R
@@ -37,7 +38,7 @@ pub struct OutEntry {
     pub minor: u32,                // subaddress index (0,0 = primary address)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputExport {
     pub offset: u32,
     pub total: u32,
@@ -68,7 +69,9 @@ fn write_varint(mut v: u64, out: &mut Vec<u8>) {
         }
     }
 }
-fn hs(d: &[u8]) -> Scalar { Scalar::from_bytes_mod_order(keccak256(d)) }
+fn hs(d: &[u8]) -> Scalar {
+    Scalar::from_bytes_mod_order(keccak256(d))
+}
 
 /// Parse a decrypted wallet2 output-export plaintext: spend_pub(32) view_pub(32)
 /// then a serialized tuple (size, offset, total, vec<exported_transfer_details>).
@@ -112,7 +115,14 @@ pub fn parse_output_export(pt: &[u8]) -> Option<OutputExport> {
         }
         let major = read_varint(pt, &mut p)? as u32;
         let minor = read_varint(pt, &mut p)? as u32;
-        out.push(OutEntry { pubkey, tx_pubkey, additional, internal_idx, major, minor });
+        out.push(OutEntry {
+            pubkey,
+            tx_pubkey,
+            additional,
+            internal_idx,
+            major,
+            minor,
+        });
     }
     if p != pt.len() {
         log::warn!(
@@ -122,7 +132,11 @@ pub fn parse_output_export(pt: &[u8]) -> Option<OutputExport> {
         );
         return None;
     }
-    Some(OutputExport { offset: offset as u32, total: total as u32, entries: out })
+    Some(OutputExport {
+        offset: offset as u32,
+        total: total as u32,
+        entries: out,
+    })
 }
 
 /// The output's one-time secret key x, such that x·G == P. Handles BOTH primary
@@ -136,8 +150,11 @@ fn output_secret(e: &OutEntry, keys: &MoneroKeys) -> Option<Scalar> {
     let view = keys.view_secret_bytes();
     let a = Scalar::from_bytes_mod_order(view);
     let b = Scalar::from_bytes_mod_order(keys.spend_secret_bytes());
-    let m =
-        if e.major == 0 && e.minor == 0 { Scalar::ZERO } else { subaddress_secret(&view, e.major, e.minor) };
+    let m = if e.major == 0 && e.minor == 0 {
+        Scalar::ZERO
+    } else {
+        subaddress_secret(&view, e.major, e.minor)
+    };
 
     // Candidate tx pubkeys: the main key, then this output's additional key.
     let mut candidates: Vec<[u8; 32]> = vec![e.tx_pubkey];
@@ -194,7 +211,11 @@ fn verify_key_image_signature(ki: &[u8; 32], pubkey: &[u8; 32], sig: &[u8; 64]) 
         return false;
     };
     sig_reader.is_empty()
-        && signature.verify(ki, &[CompressedPoint::from(*pubkey)], &CompressedPoint::from(*ki))
+        && signature.verify(
+            ki,
+            &[CompressedPoint::from(*pubkey)],
+            &CompressedPoint::from(*ki),
+        )
 }
 
 pub fn parse_output_export_file(output_file: &[u8], keys: &MoneroKeys) -> Option<OutputExport> {
@@ -231,7 +252,14 @@ pub fn build_key_image_export(export: &OutputExport, keys: &MoneroKeys) -> Optio
     let iv8 = keccak256(&plain);
     let mut iv = [0u8; 8];
     iv.copy_from_slice(&iv8[..8]);
-    Some(encrypt_tx_set(&plain, &view_secret, &view_pub, MAGIC_KEY_IMAGES, 0x03, iv))
+    Some(encrypt_tx_set(
+        &plain,
+        &view_secret,
+        &view_pub,
+        MAGIC_KEY_IMAGES,
+        0x03,
+        iv,
+    ))
 }
 
 /// Build the encrypted wallet2 `key_image_export` from an `output_export` file.
@@ -274,7 +302,9 @@ mod tests {
         rb.copy_from_slice(&sig[32..]);
         let c = Scalar::from_bytes_mod_order(cb);
         let r = Scalar::from_bytes_mod_order(rb);
-        let l = EdwardsPoint::vartime_double_scalar_mul_basepoint(&c, &p, &r).compress().to_bytes();
+        let l = EdwardsPoint::vartime_double_scalar_mul_basepoint(&c, &p, &r)
+            .compress()
+            .to_bytes();
         let rr = (r * hp + c * ki_pt).compress().to_bytes();
         let mut h = Vec::new();
         h.extend_from_slice(ki);
@@ -285,17 +315,23 @@ mod tests {
 
     #[test]
     fn cake_reported_key_image_signature_was_for_a_different_pubkey() {
-        let ki = decode_hex::<32>("3f9671913bc534f3fbb7e4bdf8d2f20624e5cd6d789ec337cdedd5ad2b8a142b");
+        let ki =
+            decode_hex::<32>("3f9671913bc534f3fbb7e4bdf8d2f20624e5cd6d789ec337cdedd5ad2b8a142b");
         let sig = decode_hex::<64>(
             "2f2f17ce3bd4628777ac64ba8b410b76f041dc68789b81e7399c991c06605a09\
              d511c781e6df0cd04d6bea54c50246accb031868b16d6fb7b89ec77485d3de02",
         );
-        let pubkey = decode_hex::<32>("b989789e6004b41dce5f1c89cff4d53ab4e590cddcadb441d34f0a11ecb53f6c");
+        let pubkey =
+            decode_hex::<32>("b989789e6004b41dce5f1c89cff4d53ab4e590cddcadb441d34f0a11ecb53f6c");
         assert!(!verify_local_ring_signature(&ki, &pubkey, &sig));
         assert!(!verify_key_image_signature(&ki, &pubkey, &sig));
     }
 
-    fn synthetic_output_export(keys: &MoneroKeys, offset: u64, internal_idx: u64) -> (Vec<u8>, [u8; 32]) {
+    fn synthetic_output_export(
+        keys: &MoneroKeys,
+        offset: u64,
+        internal_idx: u64,
+    ) -> (Vec<u8>, [u8; 32]) {
         let view_secret = keys.view_secret_bytes();
         let view_pub = keys.public_view();
         let spend_pub = keys.public_spend();
@@ -333,7 +369,17 @@ mod tests {
 
         let mut iv = [0u8; 8];
         iv.copy_from_slice(&keccak256(&output_plain)[..8]);
-        (encrypt_tx_set(&output_plain, &view_secret, &view_pub, MAGIC_OUTPUTS, 0x04, iv), output_pubkey)
+        (
+            encrypt_tx_set(
+                &output_plain,
+                &view_secret,
+                &view_pub,
+                MAGIC_OUTPUTS,
+                0x04,
+                iv,
+            ),
+            output_pubkey,
+        )
     }
 
     #[test]
@@ -351,13 +397,23 @@ mod tests {
         write_varint(0, &mut output_plain);
         let mut iv = [0u8; 8];
         iv.copy_from_slice(&keccak256(&output_plain)[..8]);
-        let output_file = encrypt_tx_set(&output_plain, &view_secret, &view_pub, MAGIC_OUTPUTS, 0x04, iv);
+        let output_file = encrypt_tx_set(
+            &output_plain,
+            &view_secret,
+            &view_pub,
+            MAGIC_OUTPUTS,
+            0x04,
+            iv,
+        );
 
         let key_image_file = export_key_images(&output_file, &keys).expect("key images");
-        let key_image_plain =
-            decrypt_with_magic(&key_image_file, &view_secret, MAGIC_KEY_IMAGES).expect("decrypt key images");
+        let key_image_plain = decrypt_with_magic(&key_image_file, &view_secret, MAGIC_KEY_IMAGES)
+            .expect("decrypt key images");
 
-        assert_eq!(u32::from_le_bytes(key_image_plain[0..4].try_into().unwrap()), 17);
+        assert_eq!(
+            u32::from_le_bytes(key_image_plain[0..4].try_into().unwrap()),
+            17
+        );
         assert_eq!(&key_image_plain[4..36], &spend_pub);
         assert_eq!(&key_image_plain[36..68], &view_pub);
         assert_eq!(key_image_plain.len(), 68);
@@ -370,17 +426,28 @@ mod tests {
         let (output_file, output_pubkey) = synthetic_output_export(&keys, 29, 0);
 
         let key_image_file = export_key_images(&output_file, &keys).expect("key images");
-        let key_image_plain =
-            decrypt_with_magic(&key_image_file, &view_secret, MAGIC_KEY_IMAGES).expect("decrypt key images");
+        let key_image_plain = decrypt_with_magic(&key_image_file, &view_secret, MAGIC_KEY_IMAGES)
+            .expect("decrypt key images");
 
-        assert_eq!(u32::from_le_bytes(key_image_plain[0..4].try_into().unwrap()), 29);
+        assert_eq!(
+            u32::from_le_bytes(key_image_plain[0..4].try_into().unwrap()),
+            29
+        );
         assert_eq!(key_image_plain.len(), 68 + 96);
 
         let mut key_image = [0u8; 32];
         key_image.copy_from_slice(&key_image_plain[68..100]);
         let mut signature = [0u8; 64];
         signature.copy_from_slice(&key_image_plain[100..164]);
-        assert!(verify_local_ring_signature(&key_image, &output_pubkey, &signature));
-        assert!(verify_key_image_signature(&key_image, &output_pubkey, &signature));
+        assert!(verify_local_ring_signature(
+            &key_image,
+            &output_pubkey,
+            &signature
+        ));
+        assert!(verify_key_image_signature(
+            &key_image,
+            &output_pubkey,
+            &signature
+        ));
     }
 }

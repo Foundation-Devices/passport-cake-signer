@@ -38,7 +38,10 @@ impl MoneroKeys {
     pub fn from_spend_key_bytes(spend_key: [u8; 32]) -> Self {
         let spend_secret = Scalar::from_bytes_mod_order(spend_key);
         let view_secret = Scalar::from_bytes_mod_order(keccak256(spend_secret.as_bytes()));
-        MoneroKeys { spend_secret, view_secret }
+        MoneroKeys {
+            spend_secret,
+            view_secret,
+        }
     }
 
     /// Derive the spend/view secrets from the 32-byte app seed via Polyseed, so
@@ -51,25 +54,39 @@ impl MoneroKeys {
     }
 
     /// The 16-word Polyseed phrase for this wallet (Show-seed screen). Secret.
-    pub fn seed_words(seed: &[u8; 32]) -> zeroize::Zeroizing<String> { super::polyseed::seed_words(seed) }
+    pub fn seed_words(seed: &[u8; 32]) -> zeroize::Zeroizing<String> {
+        super::polyseed::seed_words(seed)
+    }
 
     /// Public spend key (compressed ed25519 point), 32 bytes.
     pub fn public_spend(&self) -> [u8; 32] {
-        EdwardsPoint::mul_base(&self.spend_secret).compress().to_bytes()
+        EdwardsPoint::mul_base(&self.spend_secret)
+            .compress()
+            .to_bytes()
     }
 
     /// Public view key (compressed ed25519 point), 32 bytes.
-    pub fn public_view(&self) -> [u8; 32] { EdwardsPoint::mul_base(&self.view_secret).compress().to_bytes() }
+    pub fn public_view(&self) -> [u8; 32] {
+        EdwardsPoint::mul_base(&self.view_secret)
+            .compress()
+            .to_bytes()
+    }
 
     /// Private view key as hex — what the watch-only export shares (safe: it
     /// cannot spend).
-    pub fn private_view_key_hex(&self) -> String { hex::encode(self.view_secret.as_bytes()) }
+    pub fn private_view_key_hex(&self) -> String {
+        hex::encode(self.view_secret.as_bytes())
+    }
 
     /// Private view key bytes — used to decrypt the wallet2 unsigned tx set.
-    pub fn view_secret_bytes(&self) -> [u8; 32] { *self.view_secret.as_bytes() }
+    pub fn view_secret_bytes(&self) -> [u8; 32] {
+        *self.view_secret.as_bytes()
+    }
 
     /// Private spend key bytes — used by the signer. NEVER exported.
-    pub fn spend_secret_bytes(&self) -> [u8; 32] { *self.spend_secret.as_bytes() }
+    pub fn spend_secret_bytes(&self) -> [u8; 32] {
+        *self.spend_secret.as_bytes()
+    }
 
     /// Standard (primary) address, base58, for `network`.
     pub fn primary_address(&self, network: Network) -> String {
@@ -91,7 +108,10 @@ impl MoneroKeys {
         let public_spend = EdwardsPoint::mul_base(&self.spend_secret);
         let sub_spend = public_spend + EdwardsPoint::mul_base(&m);
         let sub_view = self.view_secret * sub_spend;
-        (sub_spend.compress().to_bytes(), sub_view.compress().to_bytes())
+        (
+            sub_spend.compress().to_bytes(),
+            sub_view.compress().to_bytes(),
+        )
     }
 }
 
@@ -118,7 +138,12 @@ mod tests {
             "40ed52a7a341c97b229a0e334867e3c9c8297075da869f4f0120a5d1a1a9900c"
         );
         // 16-word phrase round-trips.
-        assert_eq!(MoneroKeys::seed_words(&[0x11; 32]).split_whitespace().count(), 16);
+        assert_eq!(
+            MoneroKeys::seed_words(&[0x11; 32])
+                .split_whitespace()
+                .count(),
+            16
+        );
     }
 
     #[test]

@@ -101,28 +101,13 @@ export component HomePagePage inherits Rectangle {
         VerticalLayout {
             Rectangle {
                 height: Size.sz16;
-                if Callbacks.wallet-count < 3: HeadingLg {
+                HeadingLg {
                     text: "Wallets";
                     color: Cake.on-surface;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     width: parent.width;
                     height: parent.height;
-                }
-                if Callbacks.wallet-count >= 3: HorizontalLayout {
-                    width: parent.width;
-                    height: parent.height;
-                    alignment: center;
-                    spacing: Size.sz2;
-
-                    CakeLogoMark {
-                        mark-size: 28px;
-                    }
-                    HeadingLg {
-                        text: "Wallets";
-                        color: Cake.on-surface;
-                        vertical-alignment: center;
-                    }
                 }
                 IconButton {
                     icon: "ellipsis";

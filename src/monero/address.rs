@@ -26,7 +26,12 @@ pub enum AddressKind {
 }
 
 /// Build a Monero address for the given network, type, and public keys.
-pub fn address(network: Network, kind: AddressKind, pub_spend: &[u8; 32], pub_view: &[u8; 32]) -> String {
+pub fn address(
+    network: Network,
+    kind: AddressKind,
+    pub_spend: &[u8; 32],
+    pub_view: &[u8; 32],
+) -> String {
     let mut data = Vec::with_capacity(1 + 32 + 32 + 4);
     // All Monero standard/subaddress prefixes are < 128, so the varint is a
     // single byte.
@@ -83,7 +88,10 @@ fn base58_encode(data: &[u8]) -> String {
     let mut out = Vec::new();
     let full_blocks = data.len() / FULL_BLOCK_SIZE;
     for i in 0..full_blocks {
-        encode_block(&data[i * FULL_BLOCK_SIZE..(i + 1) * FULL_BLOCK_SIZE], &mut out);
+        encode_block(
+            &data[i * FULL_BLOCK_SIZE..(i + 1) * FULL_BLOCK_SIZE],
+            &mut out,
+        );
     }
     let rem = data.len() % FULL_BLOCK_SIZE;
     if rem > 0 {
@@ -95,7 +103,10 @@ fn base58_encode(data: &[u8]) -> String {
 }
 
 fn base58_value(byte: u8) -> Option<u64> {
-    ALPHABET.iter().position(|candidate| *candidate == byte).map(|i| i as u64)
+    ALPHABET
+        .iter()
+        .position(|candidate| *candidate == byte)
+        .map(|i| i as u64)
 }
 
 fn decoded_block_size(encoded_len: usize) -> Option<usize> {
@@ -147,7 +158,11 @@ fn base58_decode(encoded: &str) -> Option<Vec<u8>> {
         )?;
     }
     if rem > 0 {
-        decode_block(&bytes[full_blocks * FULL_ENCODED_BLOCK_SIZE..], decoded_block_size(rem)?, &mut out)?;
+        decode_block(
+            &bytes[full_blocks * FULL_ENCODED_BLOCK_SIZE..],
+            decoded_block_size(rem)?,
+            &mut out,
+        )?;
     }
     Some(out)
 }
@@ -190,12 +205,22 @@ mod tests {
         let mainnet = primary_address(Network::Mainnet, &[1u8; 32], &[2u8; 32]);
         let stagenet = primary_address(Network::Stagenet, &[1u8; 32], &[2u8; 32]);
         assert!(is_valid_standard_or_subaddress(&mainnet, Network::Mainnet));
-        assert!(!is_valid_standard_or_subaddress(&stagenet, Network::Mainnet));
+        assert!(!is_valid_standard_or_subaddress(
+            &stagenet,
+            Network::Mainnet
+        ));
 
         let mut corrupted = mainnet.clone();
-        let replacement = if corrupted.as_bytes()[10] == b'1' { "2" } else { "1" };
+        let replacement = if corrupted.as_bytes()[10] == b'1' {
+            "2"
+        } else {
+            "1"
+        };
         corrupted.replace_range(10..11, replacement);
-        assert!(!is_valid_standard_or_subaddress(&corrupted, Network::Mainnet));
+        assert!(!is_valid_standard_or_subaddress(
+            &corrupted,
+            Network::Mainnet
+        ));
     }
 
     #[test]

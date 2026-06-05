@@ -46,12 +46,16 @@ pub fn chacha_key(view_secret: &[u8; 32]) -> [u8; 32] {
     }
     let k = cryptonight_noxous::cryptonight_hash_v0(view_secret);
     let mut guard = CHACHA_KEY_CACHE.lock().unwrap();
-    guard.get_or_insert_with(HashMap::new).insert(*view_secret, k);
+    guard
+        .get_or_insert_with(HashMap::new)
+        .insert(*view_secret, k);
     k
 }
 
 /// Precompute and cache the chacha key (call from a background thread at launch).
-pub fn warm_chacha_key(view_secret: &[u8; 32]) { let _ = chacha_key(view_secret); }
+pub fn warm_chacha_key(view_secret: &[u8; 32]) {
+    let _ = chacha_key(view_secret);
+}
 
 /// A parsed unsigned tx set, holding the review summary.
 pub struct UnsignedTxSet {
@@ -71,15 +75,20 @@ impl UnsignedTxSet {
         // STRUCTURAL recipients from `dests` (excludes change). This is what the
         // user must see + verify before signing — the old self-pubkey scan showed
         // the wrong recipient (and amount 0) for any external send.
-        let spans = parse_construction_data(&pt).ok_or_else(|| Error::Parse("construction_data".into()))?;
-        let recipients =
-            parse_dest_entries(&pt, spans.dests).ok_or_else(|| Error::Parse("destinations".into()))?;
+        let spans =
+            parse_construction_data(&pt).ok_or_else(|| Error::Parse("construction_data".into()))?;
+        let recipients = parse_dest_entries(&pt, spans.dests)
+            .ok_or_else(|| Error::Parse("destinations".into()))?;
         if recipients.is_empty() {
-            return Err(Error::Parse("no destinations found in unsigned tx set".into()));
+            return Err(Error::Parse(
+                "no destinations found in unsigned tx set".into(),
+            ));
         }
         let sent: u64 = recipients.iter().map(|d| d.amount).sum();
         let change = change_amount(&pt, spend_pub);
-        let total_in: u64 = parse_sources(&pt).map(|s| s.iter().map(|x| x.amount).sum()).unwrap_or(0);
+        let total_in: u64 = parse_sources(&pt)
+            .map(|s| s.iter().map(|x| x.amount).sum())
+            .unwrap_or(0);
         let fee = total_in.saturating_sub(sent.saturating_add(change));
         // Display the address Cake/wallet2 carried in `original` when present
         // (covers integrated addresses too). If a fixture omits it, synthesize
@@ -114,7 +123,9 @@ impl UnsignedTxSet {
         Ok(Self { network, summary })
     }
 
-    pub fn summary(&self) -> &TxSummary { &self.summary }
+    pub fn summary(&self) -> &TxSummary {
+        &self.summary
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +153,9 @@ pub fn decrypt_with_magic(file: &[u8], view_secret: &[u8; 32], magic: &[u8]) -> 
 
     const AUTH_SIG_LEN: usize = 64;
     if !file.starts_with(magic) {
-        return Err(Error::Parse("not a Monero unsigned tx set (bad magic)".into()));
+        return Err(Error::Parse(
+            "not a Monero unsigned tx set (bad magic)".into(),
+        ));
     }
     // Bounds: need magic + version byte + iv(8) + sig(64). Guards a magic-only file.
     if file.len() <= magic.len() {
@@ -159,10 +172,14 @@ pub fn decrypt_with_magic(file: &[u8], view_secret: &[u8; 32], magic: &[u8]) -> 
     let blob = &body[..sig_start]; // iv ‖ ciphertext
     let mut sig = [0u8; AUTH_SIG_LEN];
     sig.copy_from_slice(&body[sig_start..]);
-    let view_pub = EdwardsPoint::mul_base(&Scalar::from_bytes_mod_order(*view_secret)).compress().to_bytes();
+    let view_pub = EdwardsPoint::mul_base(&Scalar::from_bytes_mod_order(*view_secret))
+        .compress()
+        .to_bytes();
     let hash = super::keccak256(blob);
     if !verify_signature(&hash, &view_pub, &sig) {
-        return Err(Error::Parse("tx set authentication signature invalid".into()));
+        return Err(Error::Parse(
+            "tx set authentication signature invalid".into(),
+        ));
     }
 
     let iv = &blob[..8];
@@ -186,7 +203,9 @@ fn verify_signature(prefix_hash: &[u8; 32], pubk: &[u8; 32], sig: &[u8; 64]) -> 
     rb.copy_from_slice(&sig[32..]);
     let c = Scalar::from_bytes_mod_order(cb);
     let r = Scalar::from_bytes_mod_order(rb);
-    let comm = (EdwardsPoint::mul_base(&r) + c * pub_point).compress().to_bytes();
+    let comm = (EdwardsPoint::mul_base(&r) + c * pub_point)
+        .compress()
+        .to_bytes();
     let mut buf = Vec::with_capacity(96);
     buf.extend_from_slice(prefix_hash);
     buf.extend_from_slice(pubk);
@@ -227,10 +246,15 @@ pub fn scan_destinations(pt: &[u8], wallet_spend_pub: &[u8; 32]) -> Vec<Destinat
                 view.copy_from_slice(&pt[i + 32..i + 64]);
                 // The same output appears in several arrays (dests, splitted_dsts,
                 // change_dts), so collapse identical (amount,address) entries.
-                let dup =
-                    out.iter().any(|d| d.amount == amount && d.spend_pub == spend && d.view_pub == view);
+                let dup = out
+                    .iter()
+                    .any(|d| d.amount == amount && d.spend_pub == spend && d.view_pub == view);
                 if !dup {
-                    out.push(Destination { amount, spend_pub: spend, view_pub: view });
+                    out.push(Destination {
+                        amount,
+                        spend_pub: spend,
+                        view_pub: view,
+                    });
                 }
                 i += 64;
                 continue;
@@ -337,7 +361,11 @@ fn parse_source(buf: &[u8], pos: &mut usize) -> Option<ParsedSource> {
         let global_index = read_varint(buf, pos)?;
         let dest = read_32(buf, pos)?;
         let commitment = read_32(buf, pos)?;
-        ring.push(RingMember { global_index, dest, commitment });
+        ring.push(RingMember {
+            global_index,
+            dest,
+            commitment,
+        });
     }
     let real_output = read_u64_le(buf, pos)?;
     let real_out_tx_key = read_32(buf, pos)?;
@@ -436,8 +464,11 @@ pub fn encrypt_tx_set(
 
     let key = chacha_key(view_secret);
     let mut body = plaintext.to_vec();
-    ChaCha20Legacy::new(GenericArray::from_slice(&key), GenericArray::from_slice(&iv))
-        .apply_keystream(&mut body);
+    ChaCha20Legacy::new(
+        GenericArray::from_slice(&key),
+        GenericArray::from_slice(&iv),
+    )
+    .apply_keystream(&mut body);
 
     // blob (for the auth hash) = iv ‖ ciphertext-body
     let mut blob = Vec::with_capacity(8 + body.len() + 64);
@@ -616,7 +647,14 @@ pub fn parse_dest_entries(pt: &[u8], span: (usize, usize)) -> Option<Vec<DestEnt
         if p > span.1 {
             return None;
         }
-        out.push(DestEntry { amount, spend_pub, view_pub, is_subaddress, is_integrated, original });
+        out.push(DestEntry {
+            amount,
+            spend_pub,
+            view_pub,
+            is_subaddress,
+            is_integrated,
+            original,
+        });
     }
     Some(out)
 }
@@ -625,5 +663,7 @@ pub fn parse_dest_entries(pt: &[u8], span: (usize, usize)) -> Option<Vec<DestEnt
 /// wired (the signed_tx_set already marks inputs spent via `selected_transfers`,
 /// so key-image export is only needed for incremental refresh). TODO.
 pub fn encode_key_images(_images: &[([u8; 32], [u8; 64])], _view_key_hex: &str) -> Result<Vec<u8>> {
-    Err(Error::Unsupported("key image export encode not implemented yet".into()))
+    Err(Error::Unsupported(
+        "key image export encode not implemented yet".into(),
+    ))
 }
