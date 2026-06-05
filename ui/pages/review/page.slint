@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, HeadingMd, AppHeader, Button, SlideToButton, TextLg, TextMd, TextSm, BasePage, PageBody, Panel } from "@ui/widgets.slint";
+import { ButtonSection, ContentSection, HeadingMd, AppHeader, Button, Icon, TimerLoader, TextLg, TextMd, TextSm, BasePage, PageBody, Panel } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { ReviewPageProps } from "./props.slint";
@@ -11,14 +12,31 @@ import { Cake } from "../../cake-theme.slint";
 
 // Verify exactly what the watch-only wallet asked us to sign BEFORE touching the
 // spend key. Everything here is parsed from the unsigned_monero_tx on-device.
-component Row inherits HorizontalLayout {
+component Row inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <brush> value-color: Cake.on-surface;
-    spacing: Size.sz2;
-    TextMd { text: label; color: Cake.on-surface-dim; }
-    Rectangle { } // spacer
-    TextMd { text: value; color: value-color; horizontal-alignment: right; }
+    height: Size.sz8;
+
+    HorizontalLayout {
+        spacing: Size.sz2;
+
+        TextMd {
+            text: label;
+            color: Cake.on-surface-dim;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            width: 112px;
+        }
+
+        TextMd {
+            text: value;
+            color: value-color;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
 }
 
 component AddressRow inherits Rectangle {
@@ -26,7 +44,7 @@ component AddressRow inherits Rectangle {
     in property <string> value;
     callback clicked;
 
-    height: Size.sz12;
+    height: Size.sz13;
     border-radius: Size.sz3;
 
     HorizontalLayout {
@@ -38,8 +56,9 @@ component AddressRow inherits Rectangle {
             text: label;
             color: Cake.on-surface-dim;
             vertical-alignment: center;
+            horizontal-stretch: 0;
+            width: Size.sz12;
         }
-        Rectangle { }
         TextMd {
             text: value;
             color: Cake.on-surface;
@@ -60,11 +79,114 @@ component AddressRow inherits Rectangle {
     ]
 }
 
+component OrangeSlideToSign inherits Rectangle {
+    in property <bool> signing: false;
+    callback activated;
+
+    border-radius: Size.sz6;
+    height: Size.sz16 + (Size.sz1 * 2);
+    background: Cake.surface-alt;
+
+    private property <length> inner-width: self.width - Size.sz1 * 2;
+    private property <length> inner-height: self.height - Size.sz1 * 2;
+    private property <length> thumb-width: 112px;
+    private property <length> max-slide-offset: max(Size.zero, inner-width - thumb-width);
+    private property <length> drag-offset: touch.pressed ? touch.mouse-x - touch.pressed-x : 0px;
+    private property <length> slide-offset: signing ? max-slide-offset : min(max-slide-offset, max(Size.zero, drag-offset));
+    private property <bool> has-activated: false;
+
+    changed signing => {
+        if (!signing) {
+            has-activated = false;
+        }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: Size.sz2;
+
+        if signing: TimerLoader {
+            loader-color: Cake.monero;
+            active-color: Cake.on-surface;
+        }
+
+        TextMd {
+            text: signing ? "Signing" : TR2.lookup(TrId.ReviewSign);
+            color: signing ? Cake.monero : Cake.on-surface-dim;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    target := Rectangle {
+        x: parent.width - self.width - Size.sz1;
+        y: Size.sz1;
+        width: thumb-width;
+        height: inner-height;
+        border-radius: Size.sz6;
+        background: Cake.surface;
+        opacity: signing ? 0 : 1;
+    }
+
+    thumb := Rectangle {
+        x: Size.sz1 + slide-offset;
+        y: Size.sz1;
+        width: thumb-width;
+        height: inner-height;
+        border-radius: Size.sz6;
+        background: Cake.monero-card;
+        opacity: signing ? 0 : 1;
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: Size.sz2;
+            padding-left: Size.sz4;
+            padding-right: Size.sz4;
+
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                Icon {
+                    name: "arrow-right";
+                    color: Cake.on-monero;
+                    size: Size.sz5;
+                }
+            }
+
+            TextMd {
+                text: "Sign";
+                color: Cake.on-monero;
+                horizontal-stretch: 0;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        moved() => {
+            if (!root.signing && !root.has-activated && root.slide-offset >= root.max-slide-offset) {
+                root.has-activated = true;
+                root.activated();
+            }
+        }
+    }
+}
+
 export component ReviewPagePage inherits Rectangle {
     in property <ReviewPageProps> props;
     property <bool> is-address-open: false;
     property <string> selected-dest-address: "";
+    property <bool> observed-signed-ok: Callbacks.signed-ok;
     background: Cake.background;
+
+    changed observed-signed-ok => {
+        if (observed-signed-ok) {
+            Navigate.signed-qr-page({ });
+        }
+    }
 
     BasePage {
         background: Cake.background;
@@ -101,7 +223,13 @@ export component ReviewPagePage inherits Rectangle {
                     }
                     Row { label: TR2.lookup(TrId.ReviewOutputs); value: Callbacks.output-count; }
                     Row { label: TR2.lookup(TrId.ReviewFrom);    value: Callbacks.primary-address; }
-                    Row { label: "Cake source"; value: Callbacks.tx-account-info; }
+
+                    TextSm {
+                        text: Callbacks.tx-account-info;
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: right;
+                        wrap: word-wrap;
+                    }
 
                     if Callbacks.status-text != "": TextSm {
                         text: Callbacks.status-text;
@@ -111,30 +239,25 @@ export component ReviewPagePage inherits Rectangle {
                 }
 
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Cancel);
                         importance: Importance.normal;
                         clicked => { Navigate.home-page({ }); }
                     }
-                    if Callbacks.tx-loaded && Callbacks.status-text == "": SlideToButton {
-                        label: "Sign";
-                        info-label: TR2.lookup(TrId.ReviewSign);
-                        activated-label: "Signing";
-                        icon: "arrow-right";
-                        activated(id) => {
+                    if Callbacks.tx-loaded && Callbacks.status-text == "": OrangeSlideToSign {
+                        signing: Callbacks.signing;
+                        activated => {
                             Callbacks.sign-transaction();
-                            if Callbacks.signed-ok { Navigate.signed-qr-page({ }); }
                         }
                     }
-                    if Callbacks.tx-loaded && Callbacks.status-text != "": Button {
+                    if Callbacks.tx-loaded && Callbacks.status-text != "": CakeButton {
                         label: TR2.lookup(TrId.ReviewSign);
                         importance: Importance.primary;
                         clicked => {
                             Callbacks.sign-transaction();
-                            if Callbacks.signed-ok { Navigate.signed-qr-page({ }); }
                         }
                     }
-                    if !Callbacks.tx-loaded: Button {
+                    if !Callbacks.tx-loaded: CakeButton {
                         label: TR2.lookup(TrId.ReviewSign);
                         importance: Importance.primary;
                         enabled: false;
@@ -177,7 +300,7 @@ export component ReviewPagePage inherits Rectangle {
                         wrap: word-wrap;
                     }
                     Rectangle { }
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Done);
                         importance: Importance.primary;
                         clicked => { is-address-open = false; }

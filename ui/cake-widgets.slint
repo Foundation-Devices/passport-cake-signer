@@ -1,0 +1,78 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Icon, TextLg, TimerLoader } from "@ui/widgets.slint";
+import { Importance, Size } from "@ui/theme.slint";
+import { Cake } from "cake-theme.slint";
+
+export component CakeButton inherits Rectangle {
+    in property <string> id;
+    in property <string> label: "Button";
+    in property <Importance> importance;
+    in property <bool> enabled: true;
+    in property <string> icon;
+    in property <bool> loading: false;
+    in property <bool> force-pressed: false;
+    in property <brush> label-color: content-color;
+
+    callback clicked(string);
+
+    height: Size.sz15;
+    border-radius: Size.sz6;
+    clip: true;
+    background: bg-color;
+
+    private property <bool> pressed: touch.pressed || force-pressed;
+    private property <bool> primary: importance == Importance.primary;
+    private property <bool> negative: importance == Importance.negative;
+    private property <brush> bg-color: !enabled ? Cake.surface-alt
+        : negative ? Cake.danger
+        : primary ? (pressed ? Cake.blue-dim : Cake.blue)
+        : (pressed ? Cake.surface-alt : Cake.surface);
+    private property <brush> content-color: !enabled ? Cake.on-surface-dim
+        : negative ? #FFFFFF
+        : primary ? Cake.on-blue
+        : Cake.on-surface;
+
+    HorizontalLayout {
+        spacing: Size.sz2;
+        alignment: center;
+        padding-left: Size.sz6;
+        padding-right: Size.sz6;
+
+        if loading: VerticalLayout {
+            alignment: center;
+            TimerLoader {
+                running: true;
+                loader-color: label-color;
+                active-color: label-color.darker(0.4);
+            }
+        }
+
+        if !loading && icon != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                name: icon;
+                horizontal-stretch: 1;
+                color: label-color;
+            }
+        }
+
+        if label != "": TextLg {
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: root.label;
+            color: label-color;
+            bold: true;
+            horizontal-stretch: 0;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            if (enabled) {
+                root.clicked(id);
+            }
+        }
+    }
+}

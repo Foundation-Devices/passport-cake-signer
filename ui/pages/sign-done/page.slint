@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, ShieldPage, JumboIcon, Icon } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SignDonePageProps } from "./props.slint";
@@ -36,13 +37,13 @@ export component SignDonePagePage inherits Rectangle {
             }
         }
         ButtonSection {
-            Button {
+            CakeButton {
                 label: TR2.lookup(TrId.Done);
                 importance: Importance.normal;
                 clicked => { Navigate.home-page({ }); }
             }
             // Hand the signed tx to Cake over the air as an animated UR QR.
-            Button {
+            CakeButton {
                 label: TR2.lookup(TrId.SignedQrShow);
                 importance: Importance.primary;
                 clicked => { Navigate.signed-qr-page({ }); }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, QrCodeCard } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { PairPageProps } from "./props.slint";
@@ -44,7 +45,7 @@ export component PairPagePage inherits Rectangle {
                     }
                 }
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Done);
                         importance: Importance.primary;
                         clicked => { Navigate.home-page({ }); }

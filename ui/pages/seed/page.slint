@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, TextLg, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
-import { Palette, Size, Importance } from "@ui/theme.slint";
+import { ButtonSection, ContentSection, NavHeader, Button, HeadingMd, Panel, QrCodeCard, TextLg, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
+import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SeedPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -46,6 +47,7 @@ component SeedWordItem inherits Rectangle {
 // a wallet-specific menu.
 export component SeedPagePage inherits Rectangle {
     in property <SeedPageProps> props;
+    property <bool> is-seed-qr-open: false;
     background: Cake.background;
 
     BasePage {
@@ -55,10 +57,12 @@ export component SeedPagePage inherits Rectangle {
             NavHeader {
                 title: TR2.lookup(TrId.SeedTitle);
                 left-icon: "chevron-left";
+                right-icon: "scan-qr";
                 clicked => {
                     Callbacks.clear-seed-words();
                     Navigate.wallet-detail-page({ });
                 }
+                right-clicked => { is-seed-qr-open = true; }
             }
             PageBody {
                 p-x: Size.sz2;
@@ -105,13 +109,64 @@ export component SeedPagePage inherits Rectangle {
                     }
                 }
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Done);
                         importance: Importance.primary;
                         clicked => {
                             Callbacks.clear-seed-words();
                             Navigate.wallet-detail-page({ });
                         }
+                    }
+                }
+            }
+        }
+
+        if is-seed-qr-open: Rectangle {
+            z: 200;
+            width: parent.width;
+            height: parent.height;
+            background: Palette.overlay;
+
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => { is-seed-qr-open = false; }
+            }
+
+            Panel {
+                width: UISize.modal-width;
+                height: 560px;
+                x: (parent.width - self.width) / 2;
+                y: Size.sz12;
+                background: Cake.surface;
+
+                VerticalLayout {
+                    padding: Size.sz5;
+                    spacing: Size.sz4;
+
+                    HeadingMd {
+                        text: "Recovery phrase QR";
+                        horizontal-alignment: center;
+                    }
+
+                    TextSm {
+                        text: "Plain text seed for " + Callbacks.wallet-label;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        QrCodeCard {
+                            data: Callbacks.seed-qr-text;
+                        }
+                    }
+
+                    CakeButton {
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => { is-seed-qr-open = false; }
                     }
                 }
             }

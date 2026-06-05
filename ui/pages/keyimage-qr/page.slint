@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, AnimatedQrCode } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { KeyimageQrPageProps } from "./props.slint";
@@ -17,7 +18,7 @@ export component KeyimageQrPagePage inherits Rectangle {
     background: Cake.background;
 
     // Built once + stored (so the fountain encoder advances, not resets per frame).
-    property <[string]> ki-parts: Callbacks.get-keyimage-ur(400);
+    property <[string]> ki-parts: Callbacks.get-keyimage-ur(500);
 
     BasePage {
         background: Cake.background;
@@ -37,17 +38,23 @@ export component KeyimageQrPagePage inherits Rectangle {
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
+                    if Callbacks.keyimage-sync-detail != "": TextMd {
+                        text: Callbacks.keyimage-sync-detail;
+                        color: Cake.on-surface;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
                     HorizontalLayout {
                         alignment: center;
                         AnimatedQrCode {
                             parts: ki-parts;
-                            interval: 300ms;
+                            interval: 250ms;
                             animate: true;
                         }
                     }
                 }
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Done);
                         importance: Importance.primary;
                         clicked => { Navigate.home-page({ }); }

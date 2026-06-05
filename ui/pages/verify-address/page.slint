@@ -3,6 +3,7 @@
 
 import { Button, ButtonSection, ContentSection, HeadingLg, Input, NavHeader,
          PageBody, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Importance, Size } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { VerifyAddressPageProps } from "./props.slint";
@@ -14,6 +15,20 @@ export component VerifyAddressPagePage inherits Rectangle {
     property <string> account: "0";
     property <string> subaddress: "0";
     background: Cake.background;
+
+    function refresh-derived-address() {
+        if (Callbacks.verify-ready && Callbacks.verify-title == "Derived address") {
+            Callbacks.verify-address-index(account, subaddress);
+        }
+    }
+
+    changed account => {
+        refresh-derived-address();
+    }
+
+    changed subaddress => {
+        refresh-derived-address();
+    }
 
     init => {
         Callbacks.clear-verify-address();
@@ -105,25 +120,25 @@ export component VerifyAddressPagePage inherits Rectangle {
                 }
 
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: "Show derived address";
                         icon: "eye";
                         importance: Importance.normal;
                         clicked => { Callbacks.verify-address-index(account, subaddress); }
                     }
-                    if Callbacks.verify-ready: Button {
+                    if Callbacks.verify-ready: CakeButton {
                         label: "Scan another";
                         icon: "scan-qr";
                         importance: Importance.normal;
                         clicked => { Callbacks.verify-address-scan(); }
                     }
-                    if !Callbacks.verify-ready: Button {
+                    if !Callbacks.verify-ready: CakeButton {
                         label: "Scan address QR";
                         icon: "scan-qr";
                         importance: Importance.primary;
                         clicked => { Callbacks.verify-address-scan(); }
                     }
-                    if Callbacks.verify-ready: Button {
+                    if Callbacks.verify-ready: CakeButton {
                         label: "Done";
                         importance: Importance.primary;
                         clicked => { Navigate.wallet-detail-page({ }); }

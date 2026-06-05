@@ -43,6 +43,8 @@ export global Callbacks {
     callback scan-unsigned-tx();
     // Set true after a key-image sync scan; the UI then shows the key-image QR.
     in-out property <bool> keyimages-ready;
+    // Human-readable summary of the Cake output range Prime is returning.
+    in-out property <string> keyimage-sync-detail;
     // Animated UR frames for the key images (ur_type "xmr-keyimage"). `pure` so
     // DynamicQrCode's get-parts can call it.
     pure callback get-keyimage-ur(int) -> [string];
@@ -52,6 +54,7 @@ export global Callbacks {
     callback prepare-seed-words();
     callback clear-seed-words();
     in-out property <[string]> seed-words;
+    in-out property <string> seed-qr-text;
 
     // --- Wallet identity --------------------------------------------------
     callback switch-next-wallet();
@@ -116,5 +119,6 @@ export global Callbacks {
     in-out property <int>    output-count;
     in-out property <bool>   tx-loaded;             // gate the Sign button
     in-out property <bool>   signed-ok;             // true only if signing actually succeeded
+    in-out property <bool>   signing;               // true while the signer thread is working
     in-out property <string> status-text;           // error / progress line
 }

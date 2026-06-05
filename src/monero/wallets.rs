@@ -9,13 +9,15 @@
 //! the signer can use them later without making Cake's accounts/subaddresses a
 //! Prime-managed concept.
 
-use ::polyseed::{Language as PolyseedLanguage, Polyseed};
+use std::collections::BTreeSet;
+
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use base64::Engine;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use curve25519_dalek::scalar::Scalar;
 use monero_seed::{Language as LegacyLanguage, Seed as LegacySeed};
+use polyseed::{Language as PolyseedLanguage, Polyseed};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -25,6 +27,8 @@ const SLOT_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-slot.v1";
 const STORE_AEAD_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-store.aead.v1";
 const STORE_NONCE_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-store.nonce.v1";
 const MAX_WALLETS: usize = 16;
+const MAX_LABEL_CHARS: usize = 40;
+const MAX_RECORD_ID_BYTES: usize = 96;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WalletKind {
@@ -113,22 +117,64 @@ impl WalletBook {
     }
 
     pub fn normalize(&mut self, default_restore_height: u64) {
-        if self.records.iter().all(|r| r.id != slot_id(0)) {
-            self.records.insert(0, WalletRecord::slot(0, default_restore_height));
+        self.version = 1;
+
+        let selected_id = self.selected_id.clone();
+        let mut seen_ids = BTreeSet::new();
+        let mut seen_slots = BTreeSet::new();
+        let mut records = Vec::with_capacity(self.records.len().min(MAX_WALLETS));
+
+        for mut record in self.records.drain(..) {
+            match record.kind {
+                WalletKind::DeviceSlot => {
+                    if record.slot as usize >= MAX_WALLETS {
+                        continue;
+                    }
+                    let expected_id = slot_id(record.slot);
+                    if record.id != expected_id || !seen_slots.insert(record.slot) {
+                        continue;
+                    }
+                    if !seen_ids.insert(record.id.clone()) {
+                        continue;
+                    }
+                    record.label = sanitize_label(&record.label, device_slot_label(record.slot));
+                    record.restore_height = default_restore_height;
+                    record.archived = record.slot != 0 && record.archived;
+                    record.sealed_phrase = None;
+                    records.push(record);
+                }
+                WalletKind::ImportedPolyseed | WalletKind::ImportedLegacy => {
+                    if record.sealed_phrase.is_none() || !is_valid_imported_id(&record.id) {
+                        continue;
+                    }
+                    if !seen_ids.insert(record.id.clone()) {
+                        continue;
+                    }
+                    record.label = sanitize_label(&record.label, record.kind.label().to_string());
+                    record.slot = 0;
+                    records.push(record);
+                }
+            }
         }
-        if let Some(slot_zero) = self.records.iter_mut().find(|r| r.id == slot_id(0)) {
-            slot_zero.archived = false;
+
+        let slot_zero_id = slot_id(0);
+        if let Some(pos) = records.iter().position(|r| r.id == slot_zero_id) {
+            records.swap(0, pos);
+            records[0].archived = false;
+            records[0].restore_height = default_restore_height;
+            records[0].sealed_phrase = None;
+        } else {
+            records.insert(0, WalletRecord::slot(0, default_restore_height));
         }
-        if self.records.len() > MAX_WALLETS {
-            self.records.truncate(MAX_WALLETS);
+        if records.len() > MAX_WALLETS {
+            records.truncate(MAX_WALLETS);
         }
+        self.records = records;
+        self.selected_id = selected_id;
+
         if self.selected().map(|r| r.archived).unwrap_or(true) {
-            self.selected_id = self
-                .records
-                .iter()
-                .find(|r| !r.archived)
-                .map(|r| r.id.clone())
-                .unwrap_or_else(|| slot_id(0));
+            self.selected_id =
+                self.records.iter().find(|r| !r.archived).map(|r| r.id.clone()).unwrap_or_else(|| slot_id(0));
         }
     }
 
@@ -140,13 +186,34 @@ impl WalletBook {
         self.selected_index().and_then(|i| self.records.get(i))
     }
 
+    pub fn ensure_selected_usable(&mut self, app_seed: &[u8; 32]) -> bool {
+        if self
+            .selected()
+            .filter(|wallet| !wallet.archived)
+            .and_then(|wallet| wallet.keys(app_seed).ok())
+            .is_some()
+        {
+            return false;
+        }
+        let Some(id) = self
+            .records
+            .iter()
+            .filter(|wallet| !wallet.archived)
+            .find(|wallet| wallet.keys(app_seed).is_ok())
+            .map(|wallet| wallet.id.clone())
+        else {
+            return false;
+        };
+        self.selected_id = id;
+        true
+    }
+
     pub fn active_count(&self) -> usize { self.records.iter().filter(|r| !r.archived).count() }
 
     pub fn archived_count(&self) -> usize { self.records.iter().filter(|r| r.archived).count() }
 
     pub fn can_archive_selected(&self) -> bool {
-        self.selected().map(|r| r.id != slot_id(0) && !r.archived).unwrap_or(false)
-            && self.active_count() > 1
+        self.selected().map(|r| r.id != slot_id(0) && !r.archived).unwrap_or(false) && self.active_count() > 1
     }
 
     pub fn can_restore_selected(&self) -> bool {
@@ -158,7 +225,8 @@ impl WalletBook {
     }
 
     pub fn select_next(&mut self) -> Option<&WalletRecord> {
-        let active = self.records.iter().enumerate().filter(|(_, r)| !r.archived).map(|(i, _)| i).collect::<Vec<_>>();
+        let active =
+            self.records.iter().enumerate().filter(|(_, r)| !r.archived).map(|(i, _)| i).collect::<Vec<_>>();
         if active.is_empty() {
             return None;
         }
@@ -172,7 +240,11 @@ impl WalletBook {
     }
 
     pub fn select_id(&mut self, id: &str) -> Result<&WalletRecord> {
-        let i = self.records.iter().position(|r| r.id == id).ok_or_else(|| Error::Seed("wallet not found".into()))?;
+        let i = self
+            .records
+            .iter()
+            .position(|r| r.id == id)
+            .ok_or_else(|| Error::Seed("wallet not found".into()))?;
         self.selected_id = self.records[i].id.clone();
         Ok(&self.records[i])
     }
@@ -183,9 +255,7 @@ impl WalletBook {
         }
         let next_slot = (1..MAX_WALLETS as u32)
             .find(|slot| {
-                self.records
-                    .iter()
-                    .all(|r| !matches!(r.kind, WalletKind::DeviceSlot) || r.slot != *slot)
+                self.records.iter().all(|r| !matches!(r.kind, WalletKind::DeviceSlot) || r.slot != *slot)
             })
             .ok_or_else(|| Error::Unsupported(format!("maximum wallet count is {MAX_WALLETS}")))?;
         let rec = WalletRecord::slot(next_slot, default_restore_height);
@@ -195,11 +265,10 @@ impl WalletBook {
     }
 
     pub fn rename_selected(&mut self, label: &str) -> Result<&WalletRecord> {
-        let label = label.trim();
+        let label = sanitize_label(label, String::new());
         if label.is_empty() {
             return Err(Error::Seed("wallet label required".into()));
         }
-        let label = label.chars().take(40).collect::<String>();
         let i = self.selected_index().ok_or_else(|| Error::Seed("selected wallet missing".into()))?;
         self.records[i].label = label;
         Ok(&self.records[i])
@@ -211,7 +280,12 @@ impl WalletBook {
         }
         let i = self.selected_index().ok_or_else(|| Error::Seed("selected wallet missing".into()))?;
         let removed = self.records.remove(i);
-        self.selected_id = self.records.first().map(|r| r.id.clone()).unwrap_or_else(|| slot_id(0));
+        self.selected_id = self
+            .records
+            .iter()
+            .find(|wallet| !wallet.archived)
+            .map(|r| r.id.clone())
+            .unwrap_or_else(|| slot_id(0));
         Ok(removed)
     }
 
@@ -221,14 +295,14 @@ impl WalletBook {
         text: &str,
         imported_restore_height: u64,
     ) -> Result<&WalletRecord> {
-        if self.records.len() >= MAX_WALLETS {
-            return Err(Error::Unsupported(format!("maximum wallet count is {MAX_WALLETS}")));
-        }
         let imported = ImportedSeed::parse(text)?;
         if let Some(i) = self.records.iter().position(|r| r.id == imported.id) {
             self.records[i].archived = false;
             self.selected_id = self.records[i].id.clone();
             return self.selected().ok_or_else(|| Error::Seed("selected imported wallet missing".into()));
+        }
+        if self.records.len() >= MAX_WALLETS {
+            return Err(Error::Unsupported(format!("maximum wallet count is {MAX_WALLETS}")));
         }
         let count = self.records.iter().filter(|r| r.kind == imported.kind).count() + 1;
         let label = match imported.kind {
@@ -294,6 +368,29 @@ pub fn slot_seed(app_seed: &[u8; 32], slot: u32) -> [u8; 32] {
 
 fn slot_id(slot: u32) -> String { format!("slot-{slot}") }
 
+fn device_slot_label(slot: u32) -> String {
+    if slot == 0 {
+        "Passport Prime".into()
+    } else {
+        format!("Passport Prime {}", slot + 1)
+    }
+}
+
+fn sanitize_label(label: &str, fallback: String) -> String {
+    let cleaned = label.trim().chars().filter(|c| !c.is_control()).take(MAX_LABEL_CHARS).collect::<String>();
+    if cleaned.is_empty() {
+        fallback
+    } else {
+        cleaned
+    }
+}
+
+fn is_valid_imported_id(id: &str) -> bool {
+    id.starts_with("import-")
+        && id.len() <= MAX_RECORD_ID_BYTES
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SealedPhrase {
     pub nonce: String,
@@ -313,26 +410,28 @@ fn seal_phrase(app_seed: &[u8; 32], id: &str, phrase: &str) -> Result<SealedPhra
     nonce_material.extend_from_slice(app_seed);
     nonce_material.extend_from_slice(id.as_bytes());
     nonce_material.extend_from_slice(phrase.as_bytes());
-    let h1 = keccak256(&nonce_material);
+    let mut h1 = keccak256(&nonce_material);
     nonce_material.extend_from_slice(b".1");
-    let h2 = keccak256(&nonce_material);
+    let mut h2 = keccak256(&nonce_material);
     let mut nonce = [0u8; 24];
     nonce[..16].copy_from_slice(&h1[..16]);
     nonce[16..].copy_from_slice(&h2[..8]);
 
-    let key = store_key(STORE_AEAD_DOMAIN, app_seed);
-    let cipher = XChaCha20Poly1305::new((&key).into());
+    let key = Zeroizing::new(store_key(STORE_AEAD_DOMAIN, app_seed));
+    let cipher = XChaCha20Poly1305::new((&*key).into());
     let ciphertext = cipher
         .encrypt(XNonce::from_slice(&nonce), Payload { msg: phrase.as_bytes(), aad: id.as_bytes() })
         .map_err(|_| Error::Seed("wallet seed encryption failed".into()))?;
-    Ok(SealedPhrase {
-        nonce: STANDARD_NO_PAD.encode(&nonce),
-        ciphertext: STANDARD_NO_PAD.encode(&ciphertext),
-    })
+    nonce_material.zeroize();
+    h1.zeroize();
+    h2.zeroize();
+    let nonce_text = STANDARD_NO_PAD.encode(&nonce);
+    nonce.zeroize();
+    Ok(SealedPhrase { nonce: nonce_text, ciphertext: STANDARD_NO_PAD.encode(&ciphertext) })
 }
 
 fn open_phrase(app_seed: &[u8; 32], id: &str, sealed: &SealedPhrase) -> Result<Zeroizing<String>> {
-    let nonce = STANDARD_NO_PAD
+    let mut nonce = STANDARD_NO_PAD
         .decode(sealed.nonce.as_bytes())
         .map_err(|_| Error::Seed("wallet seed nonce is invalid".into()))?;
     if nonce.len() != 24 {
@@ -341,18 +440,25 @@ fn open_phrase(app_seed: &[u8; 32], id: &str, sealed: &SealedPhrase) -> Result<Z
     let mut ciphertext = STANDARD_NO_PAD
         .decode(sealed.ciphertext.as_bytes())
         .map_err(|_| Error::Seed("wallet seed ciphertext is invalid".into()))?;
-    let key = store_key(STORE_AEAD_DOMAIN, app_seed);
-    let cipher = XChaCha20Poly1305::new((&key).into());
+    let key = Zeroizing::new(store_key(STORE_AEAD_DOMAIN, app_seed));
+    let cipher = XChaCha20Poly1305::new((&*key).into());
     let plaintext = cipher
         .decrypt(XNonce::from_slice(&nonce), Payload { msg: &ciphertext, aad: id.as_bytes() })
         .map_err(|_| {
             ciphertext.zeroize();
+            nonce.zeroize();
             Error::Seed("wallet seed authentication failed".into())
         })?;
     ciphertext.zeroize();
-    String::from_utf8(plaintext)
-        .map(Zeroizing::new)
-        .map_err(|_| Error::Seed("wallet seed is not UTF-8".into()))
+    nonce.zeroize();
+    match String::from_utf8(plaintext) {
+        Ok(phrase) => Ok(Zeroizing::new(phrase)),
+        Err(e) => {
+            let mut bytes = e.into_bytes();
+            bytes.zeroize();
+            Err(Error::Seed("wallet seed is not UTF-8".into()))
+        }
+    }
 }
 
 struct ImportedSeed {
@@ -545,5 +651,57 @@ mod tests {
         book.archive_selected().unwrap();
         assert_eq!(book.delete_selected().unwrap().id, "slot-1");
         assert_eq!(book.add_device_slot(123).unwrap().id, "slot-1");
+    }
+
+    #[test]
+    fn normalize_rejects_mismatched_device_slot_records() {
+        let json = r#"{
+          "version": 99,
+          "selected_id": "slot-0",
+          "records": [
+            {
+              "id": "slot-0",
+              "label": "Looks like default",
+              "kind": "DeviceSlot",
+              "slot": 7,
+              "restore_height": 999999999,
+              "archived": true
+            }
+          ]
+        }"#;
+        let book = from_json(json, 123).unwrap();
+        assert_eq!(book.version, 1);
+        assert_eq!(book.records.len(), 1);
+        let selected = book.selected().unwrap();
+        assert_eq!(selected.id, "slot-0");
+        assert_eq!(selected.slot, 0);
+        assert_eq!(selected.restore_height, 123);
+        assert!(!selected.archived);
+    }
+
+    #[test]
+    fn duplicate_import_restores_even_at_wallet_limit() {
+        let phrase = crate::monero::polyseed::seed_words(&DEV_SEED);
+        let mut book = WalletBook::new(123);
+        let imported_id = book.import_seed(&DEV_SEED, &phrase, 0).unwrap().id.clone();
+        book.archive_selected().unwrap();
+        while book.records.len() < MAX_WALLETS {
+            book.add_device_slot(123).unwrap();
+        }
+        let restored = book.import_seed(&DEV_SEED, &phrase, 0).unwrap();
+        assert_eq!(restored.id, imported_id);
+        assert!(!restored.archived);
+    }
+
+    #[test]
+    fn unusable_selected_import_falls_back_to_slot_zero() {
+        let phrase = crate::monero::polyseed::seed_words(&DEV_SEED);
+        let mut book = WalletBook::new(123);
+        let imported_id = book.import_seed(&DEV_SEED, &phrase, 0).unwrap().id.clone();
+        let imported = book.records.iter_mut().find(|wallet| wallet.id == imported_id).unwrap();
+        imported.sealed_phrase.as_mut().unwrap().ciphertext = "tampered".into();
+
+        assert!(book.ensure_selected_usable(&DEV_SEED));
+        assert_eq!(book.selected().unwrap().id, "slot-0");
     }
 }

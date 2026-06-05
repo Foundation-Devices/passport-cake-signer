@@ -15,6 +15,8 @@ mod monero;
 mod qr;
 
 use std::{
+    cell::OnceCell,
+    collections::{BTreeMap, HashMap},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -45,7 +47,11 @@ const DEFAULT_NETWORK: Network = Network::Mainnet;
 const DATA_SUBDIR: &str = ".passport-cake-signer-keyos";
 const EXPORT_DIR: &str = "cake"; // subdir used when the user picks a location root
 const MAX_TXSET_BYTES: u64 = 4_194_304; // 4 MiB; Monero tx sets are larger than PSBTs
+const MAX_TXSET_QR_BYTES: usize = MAX_TXSET_BYTES as usize;
 const MAX_SEED_FILE_BYTES: u64 = 16_384;
+const MAX_SEED_TEXT_CHARS: usize = 4_096;
+const MAX_ADDRESS_QR_BYTES: usize = 512;
+const MAX_CACHED_OUTPUTS_PER_WALLET: usize = 8_192;
 const FEE_PER_WEIGHT: u64 = 20_000; // ≈ wallet2's fee; clears the network minimum
                                     // Restore height embedded in the view-only pairing QR (mainnet). Conservatively
                                     // set just BEFORE the wallet's Polyseed birthday (2026-01-01) so Cake's
@@ -63,6 +69,10 @@ const IMPORTED_RESTORE_HEIGHT: u64 = 0; // Imported seeds may be old; full scan 
 const VERIFY_ACCOUNT_LIMIT: u32 = 4;
 const VERIFY_SUBADDRESS_LIMIT: u32 = 100;
 
+thread_local! {
+    static UI: OnceCell<AppWindow> = OnceCell::new();
+}
+
 /// Live app state shared across UI callbacks.
 struct AppState {
     app_seed: [u8; 32],
@@ -78,6 +88,18 @@ struct AppState {
     /// The most recently produced key_image_export (answer to Cake's xmr-output
     /// sync), for the xmr-keyimage animated-QR handoff.
     last_keyimages: Option<Vec<u8>>,
+    /// True while a signer thread is building the signed_tx_set.
+    signing: bool,
+    /// Output details Cake has shown us during this app session, keyed by wallet
+    /// id then transfer index. Cake can export only an incremental suffix; if
+    /// Prime has also seen the contiguous prefix, answer with that full prefix so
+    /// Cake's key-image map is repaired from transfer 0.
+    output_cache: HashMap<String, BTreeMap<u32, monero::keyimage::OutEntry>>,
+    /// Cache derived Monero addresses so repeated verification does not redo
+    /// hundreds of scalar multiplications on the UI path.
+    address_cache: HashMap<String, AddressHit>,
+    /// Monotonic guard for background address verification jobs.
+    verify_request_id: u64,
 }
 
 impl AppState {
@@ -91,6 +113,7 @@ impl AppState {
         self.pending = None;
         self.last_signed = None;
         self.last_keyimages = None;
+        self.signing = false;
     }
 }
 
@@ -98,6 +121,10 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     log_server::init_wait(env!("CARGO_CRATE_NAME")).unwrap();
     log::set_max_level(log::LevelFilter::Info);
     log::info!("Starting Cake Wallet Signer");
+
+    UI.with(|slot| {
+        slot.set(ui.clone_strong()).ok();
+    });
 
     let app_seed = match master_key::app_seed() {
         Ok(seed) => seed,
@@ -114,10 +141,15 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         log::error!("cannot create data dir {}: {e}", data_dir.display());
     }
 
-    let wallet_book = load_wallet_book(&data_dir).unwrap_or_else(|e| {
+    let mut wallet_book = load_wallet_book(&data_dir).unwrap_or_else(|e| {
         log::warn!("could not load wallet book: {e}");
         wallets::WalletBook::new(PAIR_RESTORE_HEIGHT)
     });
+    if wallet_book.ensure_selected_usable(&app_seed) {
+        if let Err(e) = save_wallet_book(&data_dir, &wallet_book) {
+            log::warn!("could not persist wallet fallback selection: {e}");
+        }
+    }
 
     let state = Arc::new(Mutex::new(AppState {
         app_seed,
@@ -127,6 +159,10 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         pending: None,
         last_signed: None,
         last_keyimages: None,
+        signing: false,
+        output_cache: HashMap::new(),
+        address_cache: HashMap::new(),
+        verify_request_id: 0,
     }));
 
     // Warm the CryptoNight-derived chacha file key off the GUI thread. Software
@@ -221,30 +257,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                     return;
                 }
             };
-            let mut st = state.lock().unwrap();
-            let keys = match st.keys() {
-                Ok(keys) => keys,
-                Err(e) => {
-                    drop(st);
-                    set_status(&ui, &format!("{e}"));
-                    return;
-                }
-            };
-            let view_secret = keys.view_secret_bytes();
-            let spend_pub = keys.public_spend();
-            let network = st.network;
-            match txset::UnsignedTxSet::parse(&bytes, &view_secret, &spend_pub, network) {
-                Ok(unsigned) => {
-                    populate_review(&ui, unsigned.summary());
-                    st.pending = Some((unsigned, bytes));
-                    ui.global::<Callbacks>().set_tx_loaded(true);
-                    ui.global::<Callbacks>().set_status_text("".into());
-                }
-                Err(e) => {
-                    ui.global::<Callbacks>().set_tx_loaded(false);
-                    set_status(&ui, &format!("{e}"));
-                }
-            }
+            load_unsigned_tx_for_wallet(&ui, &state, bytes);
         });
     }
 
@@ -298,6 +311,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 }
             };
             drop(st);
+            ui.global::<Callbacks>().set_seed_qr_text(words.as_str().into());
             let words = words.split_whitespace().map(SharedString::from).collect::<Vec<SharedString>>();
             ui.global::<Callbacks>().set_seed_words(ModelRc::new(VecModel::from(words)));
         });
@@ -307,6 +321,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         ui.global::<Callbacks>().on_clear_seed_words(move || {
             let Some(ui) = weak.upgrade() else { return };
             ui.global::<Callbacks>().set_seed_words(ModelRc::<SharedString>::default());
+            ui.global::<Callbacks>().set_seed_qr_text("".into());
         });
     }
 
@@ -340,13 +355,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_add_device_wallet_slot(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let result = {
                 let mut st = state.lock().unwrap();
                 match st.wallet_book.add_device_slot(PAIR_RESTORE_HEIGHT) {
                     Ok(wallet) => {
                         let label = wallet.label.clone();
                         st.clear_wallet_artifacts();
+                        st.address_cache.clear();
                         Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
                     }
                     Err(e) => Err(e),
@@ -374,7 +392,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_select_wallet(move |id| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             select_wallet(&ui, &state, id.as_str(), true)
         });
     }
@@ -382,7 +402,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_select_first_active_wallet(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             select_first_active_wallet(&ui, &state)
         });
     }
@@ -390,7 +412,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_import_seed_text(move |seed| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             import_seed_text(&ui, &state, seed.as_str(), IMPORTED_RESTORE_HEIGHT)
         });
     }
@@ -402,7 +426,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_import_seed_file(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let bytes = match read_via_picker(MAX_SEED_FILE_BYTES) {
                 Ok(bytes) => bytes,
                 Err(e) => {
@@ -427,7 +453,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_import_seed_qr(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             import_seed_qr(&ui, &state)
         });
     }
@@ -435,12 +463,15 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_rename_active_wallet(move |label| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let result = {
                 let mut st = state.lock().unwrap();
                 match st.wallet_book.rename_selected(label.as_str()) {
                     Ok(wallet) => {
                         let label = wallet.label.clone();
+                        st.address_cache.clear();
                         Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
                     }
                     Err(e) => Err(e),
@@ -466,13 +497,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_archive_active_wallet(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let result = {
                 let mut st = state.lock().unwrap();
                 let label = st.active_wallet().map(|wallet| wallet.label.clone());
                 match (label, st.wallet_book.archive_selected()) {
                     (Ok(label), Ok(_)) => {
                         st.clear_wallet_artifacts();
+                        st.address_cache.clear();
                         Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
                     }
                     (Err(e), _) | (_, Err(e)) => Err(e),
@@ -500,13 +534,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_restore_active_wallet(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let result = {
                 let mut st = state.lock().unwrap();
                 match st.wallet_book.restore_selected() {
                     Ok(wallet) => {
                         let label = wallet.label.clone();
                         st.clear_wallet_artifacts();
+                        st.address_cache.clear();
                         Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
                     }
                     Err(e) => Err(e),
@@ -534,13 +571,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_delete_active_wallet(move || {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             let result = {
                 let mut st = state.lock().unwrap();
                 match st.wallet_book.delete_selected() {
                     Ok(wallet) => {
                         let label = wallet.label;
                         st.clear_wallet_artifacts();
+                        st.address_cache.clear();
                         Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
                     }
                     Err(e) => Err(e),
@@ -565,9 +605,11 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         });
     }
     {
+        let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_clear_verify_address(move || {
             let Some(ui) = weak.upgrade() else { return };
+            bump_verify_request(&state);
             clear_verify_ui(&ui);
         });
     }
@@ -583,7 +625,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let state = state.clone();
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_verify_address_index(move |account, index| {
-            let Some(ui) = weak.upgrade() else { return false };
+            let Some(ui) = weak.upgrade() else {
+                return false;
+            };
             verify_address_index(&ui, &state, account.as_str(), index.as_str())
         });
     }
@@ -621,12 +665,14 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             ui.global::<Callbacks>().set_tx_loaded(false);
             ui.global::<Callbacks>().set_keyimages_ready(false);
             ui.global::<Callbacks>().set_signed_ok(false);
+            ui.global::<Callbacks>().set_signing(false);
             ui.global::<Callbacks>().set_status_text("".into());
             {
                 let mut st = state.lock().unwrap();
                 st.pending = None;
                 st.last_signed = None;
                 st.last_keyimages = None;
+                st.signing = false;
             }
             let opts = ScanQrOptions {
                 header_title: "Sign transaction".into(),
@@ -649,7 +695,13 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 // re-fires as it assembles the multi-part UR from Cake).
                 _ => return,
             };
-            let raw = qr::ur_payload(&data);
+            let raw = match qr::ur_payload_limited(&data, MAX_TXSET_QR_BYTES) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    set_status(&ui, e);
+                    return;
+                }
+            };
             let mut st = state.lock().unwrap();
             let keys = match st.keys() {
                 Ok(keys) => keys,
@@ -661,10 +713,54 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             };
             if ur_type == qr::UR_OUTPUT {
                 // Cake's key-image sync: import outputs, return key images.
-                match monero::keyimage::export_key_images(&raw, &keys) {
-                    Some(ki) => {
+                let wallet_id = match st.active_wallet() {
+                    Ok(wallet) if !wallet.archived => wallet.id.clone(),
+                    Ok(_) => {
+                        drop(st);
+                        set_status(&ui, "Restore this wallet before syncing key images.");
+                        return;
+                    }
+                    Err(e) => {
+                        drop(st);
+                        set_status(&ui, &format!("{e}"));
+                        return;
+                    }
+                };
+                match monero::keyimage::parse_output_export_file(&raw, &keys) {
+                    Some(export) if export.entries.is_empty() => {
+                        drop(st);
+                        set_status(
+                            &ui,
+                            "Cake did not send any outputs for key-image sync. Recreate the Cake watch-only wallet to force a full output export.",
+                        );
+                    }
+                    Some(export) => {
+                        let response_export = match cache_and_choose_keyimage_export(
+                            st.output_cache.entry(wallet_id).or_default(),
+                            export,
+                        ) {
+                            KeyImageSyncDecision::Export(response_export) => response_export,
+                            KeyImageSyncDecision::MissingPrefix(missing) => {
+                                drop(st);
+                                set_status(
+                                    &ui,
+                                    &format!(
+                                        "Cake only sent output {} of {}. Switch Cake's QR to Outputs (all), then scan again.",
+                                        missing.requested_offset, missing.total
+                                    ),
+                                );
+                                return;
+                            }
+                        };
+                        let info = keyimage_sync_detail(&response_export);
+                        let Some(ki) = monero::keyimage::build_key_image_export(&response_export, &keys) else {
+                            drop(st);
+                            set_status(&ui, "Could not build key images from those outputs.");
+                            return;
+                        };
                         st.last_keyimages = Some(ki);
                         drop(st);
+                        ui.global::<Callbacks>().set_keyimage_sync_detail(info.into());
                         ui.global::<Callbacks>().set_keyimages_ready(true);
                         ui.global::<Callbacks>().set_status_text("".into());
                     }
@@ -674,22 +770,8 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                     }
                 }
             } else if ur_type == qr::UR_TX_UNSIGNED {
-                let view_secret = keys.view_secret_bytes();
-                let spend_pub = keys.public_spend();
-                let network = st.network;
-                match txset::UnsignedTxSet::parse(&raw, &view_secret, &spend_pub, network) {
-                    Ok(unsigned) => {
-                        populate_review(&ui, unsigned.summary());
-                        st.pending = Some((unsigned, raw));
-                        drop(st);
-                        ui.global::<Callbacks>().set_tx_loaded(true);
-                        ui.global::<Callbacks>().set_status_text("".into());
-                    }
-                    Err(e) => {
-                        drop(st);
-                        set_status(&ui, &format!("{e}"));
-                    }
-                }
+                drop(st);
+                load_unsigned_tx_for_wallet(&ui, &state, raw);
             } else {
                 drop(st);
                 set_status(&ui, &format!("Unexpected QR type: {ur_type}"));
@@ -706,40 +788,72 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             // Only the real-success path flips this true; the UI navigates to the
             // signed-QR screen ONLY when this is true (no fake success).
             ui.global::<Callbacks>().set_signed_ok(false);
+            ui.global::<Callbacks>().set_signing(false);
             ui.global::<Callbacks>().set_status_text("".into());
-            let mut st = state.lock().unwrap();
-            st.last_signed = None;
-            let Some((_, raw)) = st.pending.as_ref() else {
-                drop(st);
-                set_status(&ui, "No transaction loaded.");
-                return;
-            };
-            let keys = match st.keys() {
-                Ok(keys) => keys,
-                Err(e) => {
-                    drop(st);
-                    set_status(&ui, &format!("{e}"));
+            let (raw, keys, network) = {
+                let mut st = state.lock().unwrap();
+                if st.signing {
                     return;
                 }
-            };
-            let network = st.network;
-            let raw = raw.clone();
-            drop(st);
-            // Sign the wallet2 unsigned tx with serai (CLSAG + Bulletproof+) and
-            // package it as a wallet2 `signed_tx_set` — the exact file Cake loads
-            // via "Import signed transaction" → submit_transfer. FEE_PER_WEIGHT
-            // clears the network minimum (≈ the wallet2 fee).
-            let result = signer::build_signed_tx_set(&raw, &keys, network, FEE_PER_WEIGHT);
-            match result {
-                Ok(bytes) => {
-                    // Stash for the animated-QR handoff. Saving to file is an
-                    // explicit follow-up action on the QR screen.
-                    state.lock().unwrap().last_signed = Some(bytes.clone());
-                    ui.global::<Callbacks>().set_signed_ok(true);
-                    ui.global::<Callbacks>().set_status_text("".into());
+                st.last_signed = None;
+                let Some((_, raw)) = st.pending.as_ref() else {
+                    drop(st);
+                    set_status(&ui, "No transaction loaded.");
+                    return;
+                };
+                if st.active_wallet().map(|wallet| wallet.archived).unwrap_or(true) {
+                    drop(st);
+                    set_status(&ui, "Restore this wallet before signing.");
+                    return;
                 }
-                Err(e) => set_status(&ui, &format!("Cannot sign: {e}")),
-            }
+                let keys = match st.keys() {
+                    Ok(keys) => keys,
+                    Err(e) => {
+                        drop(st);
+                        set_status(&ui, &format!("{e}"));
+                        return;
+                    }
+                };
+                let network = st.network;
+                let raw = raw.clone();
+                st.signing = true;
+                (raw, keys, network)
+            };
+            ui.global::<Callbacks>().set_signing(true);
+
+            let state = state.clone();
+            std::thread::spawn(move || {
+                // Sign the wallet2 unsigned tx with serai (CLSAG + Bulletproof+) and
+                // package it as a wallet2 `signed_tx_set` — the exact file Cake loads
+                // via "Import signed transaction" → submit_transfer. FEE_PER_WEIGHT
+                // clears the network minimum (≈ the wallet2 fee).
+                let result = signer::build_signed_tx_set(&raw, &keys, network, FEE_PER_WEIGHT);
+                queue_with_ui(move |ui| {
+                    let mut st = state.lock().unwrap();
+                    st.signing = false;
+                    match result {
+                        Ok(bytes) => {
+                            // Stash for the animated-QR handoff. Saving to file is an
+                            // explicit follow-up action on the QR screen.
+                            st.last_signed = Some(bytes);
+                            drop(st);
+                            ui.global::<Callbacks>().set_signing(false);
+                            ui.global::<Callbacks>().set_signed_ok(true);
+                            ui.global::<Callbacks>().set_status_text("".into());
+                        }
+                        Err(signer::SignError::Decrypt) => {
+                            drop(st);
+                            ui.global::<Callbacks>().set_signing(false);
+                            set_status(ui, wrong_wallet_sign_message());
+                        }
+                        Err(e) => {
+                            drop(st);
+                            ui.global::<Callbacks>().set_signing(false);
+                            set_status(ui, &format!("Cannot sign: {e}"));
+                        }
+                    }
+                });
+            });
         });
     }
 
@@ -783,13 +897,270 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
 // UI helpers
 // ---------------------------------------------------------------------------
 
+fn queue_with_ui(f: impl FnOnce(&AppWindow) + Send + 'static) {
+    slint_keyos_platform::spawn(async move {
+        UI.with(|ui| f(ui.get().expect("UI initialized")));
+    })
+    .detach();
+}
+
+fn load_unsigned_tx_for_wallet(ui: &AppWindow, state: &Arc<Mutex<AppState>>, bytes: Vec<u8>) -> bool {
+    reset_transaction_ui(ui);
+    {
+        let mut st = state.lock().unwrap();
+        st.pending = None;
+        st.last_signed = None;
+        st.last_keyimages = None;
+    }
+
+    let active = {
+        let st = state.lock().unwrap();
+        let wallet = match st.active_wallet() {
+            Ok(wallet) => wallet.clone(),
+            Err(e) => {
+                set_status(ui, &format!("{e}"));
+                return false;
+            }
+        };
+        if wallet.archived {
+            set_status(ui, "Restore this wallet before signing.");
+            return false;
+        }
+        let keys = match wallet.keys(&st.app_seed) {
+            Ok(keys) => keys,
+            Err(e) => {
+                set_status(ui, &format!("{e}"));
+                return false;
+            }
+        };
+        (wallet, keys, st.network)
+    };
+
+    let view_secret = active.1.view_secret_bytes();
+    let spend_pub = active.1.public_spend();
+    match txset::UnsignedTxSet::parse(&bytes, &view_secret, &spend_pub, active.2) {
+        Ok(unsigned) => {
+            finish_loaded_unsigned_tx(ui, state, unsigned, bytes);
+            return true;
+        }
+        Err(e) if !is_wrong_wallet_tx_error(&e) => {
+            set_status(ui, &friendly_unsigned_tx_error(&e));
+            return false;
+        }
+        Err(_) => {}
+    }
+
+    match find_matching_unsigned_tx_wallet(state, &active.0.id, &bytes) {
+        WalletTxMatch::Other { wallet, unsigned } => {
+            if wallet.archived {
+                set_status(
+                    ui,
+                    &format!(
+                        "This transaction belongs to archived wallet \"{}\". Restore that wallet before signing.",
+                        wallet.label
+                    ),
+                );
+                return false;
+            }
+
+            let summary = unsigned.summary().clone();
+            let save = {
+                let mut st = state.lock().unwrap();
+                if let Err(e) = st.wallet_book.select_id(&wallet.id) {
+                    set_status(ui, &format!("{e}"));
+                    return false;
+                }
+                st.clear_wallet_artifacts();
+                let data_dir = st.data_dir.clone();
+                let book = st.wallet_book.clone();
+                st.pending = Some((unsigned, bytes));
+                (data_dir, book)
+            };
+            if let Err(e) = save_wallet_book(&save.0, &save.1) {
+                log::warn!("could not persist wallet switch for transaction: {e}");
+            }
+            refresh_wallet_ui(ui, state);
+            warm_active_wallet(state);
+            populate_review(ui, &summary);
+            ui.global::<Callbacks>().set_tx_loaded(true);
+            ui.global::<Callbacks>().set_status_text("".into());
+            true
+        }
+        WalletTxMatch::ParseError { wallet, error } => {
+            set_status(
+                ui,
+                &format!(
+                    "This transaction appears to belong to \"{}\", but Prime could not read it: {}",
+                    wallet.label,
+                    friendly_unsigned_tx_error(&error)
+                ),
+            );
+            false
+        }
+        WalletTxMatch::None => {
+            set_status(ui, wrong_wallet_load_message());
+            false
+        }
+    }
+}
+
+enum WalletTxMatch {
+    Other { wallet: wallets::WalletRecord, unsigned: txset::UnsignedTxSet },
+    ParseError { wallet: wallets::WalletRecord, error: monero::Error },
+    None,
+}
+
+fn find_matching_unsigned_tx_wallet(
+    state: &Arc<Mutex<AppState>>,
+    active_id: &str,
+    bytes: &[u8],
+) -> WalletTxMatch {
+    let (wallets, app_seed, network) = {
+        let st = state.lock().unwrap();
+        (st.wallet_book.records.clone(), st.app_seed, st.network)
+    };
+
+    for wallet in wallets {
+        if wallet.id == active_id {
+            continue;
+        }
+        let Ok(keys) = wallet.keys(&app_seed) else {
+            continue;
+        };
+        let view_secret = keys.view_secret_bytes();
+        let spend_pub = keys.public_spend();
+        match txset::UnsignedTxSet::parse(bytes, &view_secret, &spend_pub, network) {
+            Ok(unsigned) => return WalletTxMatch::Other { wallet, unsigned },
+            Err(e) if !is_wrong_wallet_tx_error(&e) => {
+                return WalletTxMatch::ParseError { wallet, error: e };
+            }
+            Err(_) => {}
+        }
+    }
+
+    WalletTxMatch::None
+}
+
+fn finish_loaded_unsigned_tx(
+    ui: &AppWindow,
+    state: &Arc<Mutex<AppState>>,
+    unsigned: txset::UnsignedTxSet,
+    bytes: Vec<u8>,
+) {
+    populate_review(ui, unsigned.summary());
+    let mut st = state.lock().unwrap();
+    st.pending = Some((unsigned, bytes));
+    st.last_signed = None;
+    ui.global::<Callbacks>().set_tx_loaded(true);
+    ui.global::<Callbacks>().set_status_text("".into());
+}
+
+fn is_wrong_wallet_tx_error(error: &monero::Error) -> bool {
+    matches!(error, monero::Error::Parse(msg) if msg.contains("authentication signature invalid"))
+}
+
+fn friendly_unsigned_tx_error(error: &monero::Error) -> String {
+    match error {
+        monero::Error::Parse(msg) if msg.contains("bad magic") => {
+            "This is not a Monero unsigned transaction from Cake.".into()
+        }
+        monero::Error::Parse(msg) if msg.contains("too short") => {
+            "The transaction data is incomplete. Scan the whole animated QR again.".into()
+        }
+        _ => format!("{error}"),
+    }
+}
+
+fn wrong_wallet_load_message() -> &'static str {
+    "This transaction does not match the selected Prime wallet. It may belong to another Cake wallet, or the scan/file may be incomplete."
+}
+
+fn wrong_wallet_sign_message() -> &'static str {
+    "This transaction no longer matches the selected wallet. Open the wallet paired with Cake and scan the transaction again."
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MissingKeyImagePrefix {
+    requested_offset: u32,
+    total: u32,
+}
+
+enum KeyImageSyncDecision {
+    Export(monero::keyimage::OutputExport),
+    MissingPrefix(MissingKeyImagePrefix),
+}
+
+fn cache_and_choose_keyimage_export(
+    cache: &mut BTreeMap<u32, monero::keyimage::OutEntry>,
+    export: monero::keyimage::OutputExport,
+) -> KeyImageSyncDecision {
+    if cache.len() > MAX_CACHED_OUTPUTS_PER_WALLET {
+        cache.clear();
+    }
+    for (i, entry) in export.entries.iter().cloned().enumerate() {
+        let Some(index) = export.offset.checked_add(i as u32) else {
+            break;
+        };
+        if cache.len() >= MAX_CACHED_OUTPUTS_PER_WALLET && !cache.contains_key(&index) {
+            cache.clear();
+            return KeyImageSyncDecision::Export(export);
+        }
+        cache.insert(index, entry);
+    }
+
+    let requested_end = export.offset.saturating_add(export.entries.len() as u32);
+    let mut cached_entries = Vec::new();
+    let mut index = 0u32;
+    while let Some(entry) = cache.get(&index) {
+        cached_entries.push(entry.clone());
+        index = index.saturating_add(1);
+        if index == u32::MAX {
+            break;
+        }
+    }
+
+    if !cached_entries.is_empty() && index >= requested_end {
+        return KeyImageSyncDecision::Export(monero::keyimage::OutputExport {
+            offset: 0,
+            total: export.total,
+            entries: cached_entries,
+        });
+    }
+
+    if export.offset > 0 {
+        KeyImageSyncDecision::MissingPrefix(MissingKeyImagePrefix {
+            requested_offset: export.offset,
+            total: export.total,
+        })
+    } else {
+        KeyImageSyncDecision::Export(export)
+    }
+}
+
+fn keyimage_sync_detail(export: &monero::keyimage::OutputExport) -> String {
+    let count = export.entries.len();
+    let end = export.offset.saturating_add(count.saturating_sub(1) as u32);
+    if count == 1 {
+        format!("Returning key image for Cake output {} of {}.", export.offset, export.total)
+    } else if export.offset == 0 {
+        format!("Returning {count} key images from Cake output 0 through {end}.")
+    } else {
+        format!(
+            "Returning {count} key images from Cake output {} through {end}. If Cake still says a key image is missing, recreate the Cake watch-only wallet to force a full sync.",
+            export.offset
+        )
+    }
+}
+
 fn set_status(ui: &AppWindow, msg: &str) { ui.global::<Callbacks>().set_status_text(msg.into()); }
 
 fn reset_transaction_ui(ui: &AppWindow) {
     let cb = ui.global::<Callbacks>();
     cb.set_tx_loaded(false);
     cb.set_keyimages_ready(false);
+    cb.set_keyimage_sync_detail("".into());
     cb.set_signed_ok(false);
+    cb.set_signing(false);
     cb.set_dest_address("".into());
     cb.set_dest_addresses(model_from_strings(Vec::new()));
     cb.set_dest_address_labels(model_from_strings(Vec::new()));
@@ -844,6 +1215,20 @@ fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
             cb.set_primary_address(truncate(&address).into());
         }
         Err(e) => {
+            let active_rows = st
+                .wallet_book
+                .records
+                .iter()
+                .filter(|wallet| !wallet.archived)
+                .map(wallet_row)
+                .collect::<Vec<_>>();
+            let archived_rows = st
+                .wallet_book
+                .records
+                .iter()
+                .filter(|wallet| wallet.archived)
+                .map(wallet_row)
+                .collect::<Vec<_>>();
             cb.set_wallet_id("".into());
             cb.set_wallet_label("Wallet unavailable".into());
             cb.set_wallet_rename_value("".into());
@@ -852,8 +1237,8 @@ fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
             cb.set_wallet_address_full("".into());
             cb.set_wallet_detail("".into());
             cb.set_wallet_list(model_from_strings(Vec::new()));
-            cb.set_wallets(ModelRc::new(VecModel::from(Vec::<WalletRow>::new())));
-            cb.set_archived_wallets(ModelRc::new(VecModel::from(Vec::<WalletRow>::new())));
+            cb.set_wallets(ModelRc::new(VecModel::from(active_rows)));
+            cb.set_archived_wallets(ModelRc::new(VecModel::from(archived_rows)));
             cb.set_wallet_derived(false);
             cb.set_wallet_count(st.wallet_book.active_count() as i32);
             cb.set_archived_wallet_count(st.wallet_book.archived_count() as i32);
@@ -891,7 +1276,9 @@ fn warm_active_wallet(state: &Arc<Mutex<AppState>>) {
     };
     if let Some((wallet, app_seed)) = wallet_seed {
         std::thread::spawn(move || {
-            let Ok(keys) = wallet.keys(&app_seed) else { return };
+            let Ok(keys) = wallet.keys(&app_seed) else {
+                return;
+            };
             let view_secret = keys.view_secret_bytes();
             txset::warm_chacha_key(&view_secret);
         });
@@ -903,11 +1290,13 @@ fn select_wallet(ui: &AppWindow, state: &Arc<Mutex<AppState>>, id: &str, allow_a
         let mut st = state.lock().unwrap();
         let archived = match st.wallet_book.select_id(id) {
             Ok(wallet) => wallet.archived,
-            Err(e) => return {
-                drop(st);
-                set_status(ui, &format!("{e}"));
-                false
-            },
+            Err(e) => {
+                return {
+                    drop(st);
+                    set_status(ui, &format!("{e}"));
+                    false
+                }
+            }
         };
         if archived && !allow_archived {
             return {
@@ -931,7 +1320,8 @@ fn select_first_active_wallet(ui: &AppWindow, state: &Arc<Mutex<AppState>>) -> b
         if st.active_wallet().map(|wallet| !wallet.archived).unwrap_or(false) {
             return true;
         }
-        let Some(id) = st.wallet_book.records.iter().find(|wallet| !wallet.archived).map(|wallet| wallet.id.clone())
+        let Some(id) =
+            st.wallet_book.records.iter().find(|wallet| !wallet.archived).map(|wallet| wallet.id.clone())
         else {
             drop(st);
             set_status(ui, "No active wallets.");
@@ -977,13 +1367,19 @@ fn import_seed_qr(ui: &AppWindow, state: &Arc<Mutex<AppState>>) -> bool {
         }
     };
     let raw = match scan {
-        ScanQrResult::Qr { data, .. } => match String::from_utf8(data) {
-            Ok(s) => s,
-            Err(_) => {
-                set_status(ui, "Seed QR must be UTF-8 text.");
+        ScanQrResult::Qr { data, .. } => {
+            if data.len() > MAX_SEED_TEXT_CHARS {
+                set_status(ui, "Seed QR is too large.");
                 return false;
             }
-        },
+            match String::from_utf8(data) {
+                Ok(s) => s,
+                Err(_) => {
+                    set_status(ui, "Seed QR must be UTF-8 text.");
+                    return false;
+                }
+            }
+        }
         _ => {
             set_status(ui, "Scan Cake's seed QR, not an animated transaction QR.");
             return false;
@@ -1045,7 +1441,8 @@ fn percent_decode(value: &str) -> std::result::Result<String, String> {
                 i += 1;
             }
             b'%' if i + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).map_err(|_| "Seed QR has invalid escaping.")?;
+                let hex =
+                    std::str::from_utf8(&bytes[i + 1..i + 3]).map_err(|_| "Seed QR has invalid escaping.")?;
                 let byte = u8::from_str_radix(hex, 16).map_err(|_| "Seed QR has invalid escaping.")?;
                 out.push(byte);
                 i += 3;
@@ -1066,6 +1463,10 @@ fn import_seed_text(ui: &AppWindow, state: &Arc<Mutex<AppState>>, phrase: &str, 
         set_status(ui, "Seed words required.");
         return false;
     }
+    if phrase.len() > MAX_SEED_TEXT_CHARS {
+        set_status(ui, "Seed text is too large.");
+        return false;
+    }
     let result = {
         let mut st = state.lock().unwrap();
         let app_seed = st.app_seed;
@@ -1073,6 +1474,7 @@ fn import_seed_text(ui: &AppWindow, state: &Arc<Mutex<AppState>>, phrase: &str, 
             Ok(wallet) => {
                 let label = wallet.label.clone();
                 st.clear_wallet_artifacts();
+                st.address_cache.clear();
                 Ok((st.data_dir.clone(), st.wallet_book.clone(), label))
             }
             Err(e) => Err(e),
@@ -1123,13 +1525,47 @@ fn verify_address_scan(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
         }
     };
     let address = match scan {
-        ScanQrResult::Qr { data, .. } => match String::from_utf8(data) {
-            Ok(s) => normalize_monero_address(&s),
-            Err(_) => {
-                set_verify_result(ui, false, "Invalid QR", "Address QR was not UTF-8 text.", "");
+        ScanQrResult::Qr { data, .. } => {
+            if data.len() > MAX_ADDRESS_QR_BYTES {
+                set_verify_result(
+                    ui,
+                    false,
+                    "QR too large",
+                    "Scan a normal Monero address QR from Cake Wallet.",
+                    "",
+                );
                 return;
             }
-        },
+            match String::from_utf8(data) {
+                Ok(s) => match normalize_scanned_monero_address(&s) {
+                    Ok(address) => address,
+                    Err(AddressScanError::Bitcoin) => {
+                        set_verify_result(
+                            ui,
+                            false,
+                            "Bitcoin address",
+                            "This QR contains a Bitcoin address. This screen only verifies Monero addresses from Cake Wallet.",
+                            "",
+                        );
+                        return;
+                    }
+                    Err(AddressScanError::NotMonero) => {
+                        set_verify_result(
+                            ui,
+                            false,
+                            "Not a Monero address",
+                            "Scan a Monero receive address from Cake Wallet, or use the account/subaddress fields below.",
+                            "",
+                        );
+                        return;
+                    }
+                },
+                Err(_) => {
+                    set_verify_result(ui, false, "Invalid QR", "Address QR was not UTF-8 text.", "");
+                    return;
+                }
+            }
+        }
         ScanQrResult::LeftClicked | ScanQrResult::RightClicked => return,
         _ => {
             set_verify_result(
@@ -1146,33 +1582,11 @@ fn verify_address_scan(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
         set_verify_result(ui, false, "Invalid QR", "Address QR was empty.", "");
         return;
     }
-    match find_wallet_address(state, &address) {
-        Some(hit) => {
-            set_verify_result(
-                ui,
-                true,
-                "Address verified",
-                &format!("{} · account {} / subaddress {}", hit.wallet_label, hit.account, hit.index),
-                &address,
-            );
-        }
-        None => {
-            set_verify_result(
-                ui,
-                false,
-                "Address not found",
-                &format!(
-                    "Checked local wallets through accounts 0-{} and subaddresses 0-{}. Use Show for a specific higher index.",
-                    VERIFY_ACCOUNT_LIMIT - 1,
-                    VERIFY_SUBADDRESS_LIMIT - 1
-                ),
-                &address,
-            );
-        }
-    }
+    verify_scanned_address_async(ui, state, address);
 }
 
 fn verify_address_index(ui: &AppWindow, state: &Arc<Mutex<AppState>>, account: &str, index: &str) -> bool {
+    bump_verify_request(state);
     let account = match parse_verify_index(account, "account") {
         Ok(v) => v,
         Err(e) => {
@@ -1211,6 +1625,7 @@ fn verify_address_index(ui: &AppWindow, state: &Arc<Mutex<AppState>>, account: &
         &format!("{label} · account {account} / subaddress {index}"),
         &address,
     );
+    set_status(ui, "");
     true
 }
 
@@ -1218,27 +1633,133 @@ fn parse_verify_index(value: &str, label: &str) -> std::result::Result<u32, Stri
     value.trim().parse::<u32>().map_err(|_| format!("{label} must be a whole number"))
 }
 
+fn bump_verify_request(state: &Arc<Mutex<AppState>>) -> u64 {
+    let mut st = state.lock().unwrap();
+    st.verify_request_id = st.verify_request_id.wrapping_add(1);
+    st.verify_request_id
+}
+
+fn verify_scanned_address_async(ui: &AppWindow, state: &Arc<Mutex<AppState>>, address: String) {
+    let request_id = bump_verify_request(state);
+
+    if let Some(hit) = cached_wallet_address(state, &address) {
+        set_verified_address_result(ui, &address, Some(hit));
+        return;
+    }
+
+    set_verify_result(
+        ui,
+        false,
+        "Checking address",
+        "Searching local wallets and common subaddress indexes.",
+        &address,
+    );
+
+    let state = state.clone();
+    std::thread::spawn(move || {
+        let hit = find_wallet_address(&state, &address);
+        queue_with_ui(move |ui| {
+            if state.lock().unwrap().verify_request_id != request_id {
+                return;
+            }
+            set_verified_address_result(ui, &address, hit);
+        });
+    });
+}
+
+fn set_verified_address_result(ui: &AppWindow, address: &str, hit: Option<AddressHit>) {
+    match hit {
+        Some(hit) => {
+            set_verify_result(
+                ui,
+                true,
+                "Address verified",
+                &format!("{} · account {} / subaddress {}", hit.wallet_label, hit.account, hit.index),
+                address,
+            );
+        }
+        None => {
+            set_verify_result(
+                ui,
+                false,
+                "Address not found",
+                &format!(
+                    "Checked local wallets through accounts 0-{} and subaddresses 0-{}. Use Show for a specific higher index.",
+                    VERIFY_ACCOUNT_LIMIT - 1,
+                    VERIFY_SUBADDRESS_LIMIT - 1
+                ),
+                address,
+            );
+        }
+    }
+}
+
+#[derive(Clone)]
 struct AddressHit {
     wallet_label: String,
     account: u32,
     index: u32,
 }
 
+fn cached_wallet_address(state: &Arc<Mutex<AppState>>, address: &str) -> Option<AddressHit> {
+    state.lock().unwrap().address_cache.get(address).cloned()
+}
+
 fn find_wallet_address(state: &Arc<Mutex<AppState>>, address: &str) -> Option<AddressHit> {
-    let st = state.lock().unwrap();
-    let mut wallets = st.wallet_book.records.iter().collect::<Vec<_>>();
-    wallets.sort_by_key(|wallet| if wallet.id == st.wallet_book.selected_id { 0 } else { 1 });
+    if let Some(hit) = cached_wallet_address(state, address) {
+        return Some(hit);
+    }
+
+    let (mut wallets, selected_id, app_seed, network) = {
+        let st = state.lock().unwrap();
+        (st.wallet_book.records.clone(), st.wallet_book.selected_id.clone(), st.app_seed, st.network)
+    };
+    wallets.sort_by_key(|wallet| if wallet.id == selected_id { 0 } else { 1 });
+    let mut derived = Vec::<(String, AddressHit)>::new();
+    let mut found = None;
+
     for wallet in wallets {
-        let Ok(keys) = wallet.keys(&st.app_seed) else { continue };
+        let Ok(keys) = wallet.keys(&app_seed) else {
+            continue;
+        };
         for account in 0..VERIFY_ACCOUNT_LIMIT {
             for index in 0..VERIFY_SUBADDRESS_LIMIT {
-                if keys.address_at(st.network, account, index) == address {
-                    return Some(AddressHit { wallet_label: wallet.label.clone(), account, index });
+                let derived_address = keys.address_at(network, account, index);
+                let hit = AddressHit { wallet_label: wallet.label.clone(), account, index };
+                if derived_address == address && found.is_none() {
+                    found = Some(hit.clone());
                 }
+                derived.push((derived_address, hit));
             }
         }
     }
-    None
+
+    let mut st = state.lock().unwrap();
+    for (derived_address, hit) in derived {
+        st.address_cache.insert(derived_address, hit);
+    }
+    found
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AddressScanError {
+    Bitcoin,
+    NotMonero,
+}
+
+fn normalize_scanned_monero_address(raw: &str) -> std::result::Result<String, AddressScanError> {
+    if looks_like_bitcoin_address_qr(raw) {
+        return Err(AddressScanError::Bitcoin);
+    }
+
+    let address = normalize_monero_address(raw);
+    if address.is_empty() || monero::address::is_valid_standard_or_subaddress(&address, DEFAULT_NETWORK) {
+        Ok(address)
+    } else if looks_like_bitcoin_address_qr(&address) {
+        Err(AddressScanError::Bitcoin)
+    } else {
+        Err(AddressScanError::NotMonero)
+    }
 }
 
 fn normalize_monero_address(raw: &str) -> String {
@@ -1248,6 +1769,44 @@ fn normalize_monero_address(raw: &str) -> String {
     without_scheme.split('?').next().unwrap_or(without_scheme).trim().to_string()
 }
 
+fn looks_like_bitcoin_address_qr(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("bitcoin:") {
+        return true;
+    }
+
+    let address = trimmed.split('?').next().unwrap_or(trimmed).trim();
+    let lower_address = address.to_ascii_lowercase();
+    lower_address.starts_with("bc1")
+        || lower_address.starts_with("tb1")
+        || lower_address.starts_with("bcrt1")
+        || is_likely_bitcoin_base58_address(address)
+}
+
+fn is_likely_bitcoin_base58_address(address: &str) -> bool {
+    let len = address.len();
+    if !(26..=35).contains(&len) {
+        return false;
+    }
+    let Some(first) = address.chars().next() else {
+        return false;
+    };
+    matches!(first, '1' | '3' | 'm' | 'n' | '2') && address.chars().all(is_base58_char)
+}
+
+fn is_base58_char(c: char) -> bool {
+    matches!(
+        c,
+        '1'..='9'
+            | 'A'..='H'
+            | 'J'..='N'
+            | 'P'..='Z'
+            | 'a'..='k'
+            | 'm'..='z'
+    )
+}
+
 fn set_verify_result(ui: &AppWindow, matched: bool, title: &str, detail: &str, address: &str) {
     let cb = ui.global::<Callbacks>();
     cb.set_verify_ready(true);
@@ -1255,6 +1814,7 @@ fn set_verify_result(ui: &AppWindow, matched: bool, title: &str, detail: &str, a
     cb.set_verify_title(title.into());
     cb.set_verify_detail(detail.into());
     cb.set_verify_address(address.into());
+    cb.set_status_text("".into());
 }
 
 fn populate_review(ui: &AppWindow, s: &TxSummary) {
@@ -1268,19 +1828,7 @@ fn populate_review(ui: &AppWindow, s: &TxSummary) {
     cb.set_dest_address(truncate(s.destinations.first().map(String::as_str).unwrap_or("")).into());
     cb.set_dest_addresses(model_from_strings(s.destinations.clone()));
     cb.set_dest_address_labels(model_from_strings(
-        s.destinations
-            .iter()
-            .enumerate()
-            .map(|(i, addr)| {
-                let amount = s
-                    .destination_amounts_atomic
-                    .get(i)
-                    .copied()
-                    .map(monero::format_xmr)
-                    .unwrap_or_else(|| "?".into());
-                format!("{amount} XMR · {}", truncate(addr))
-            })
-            .collect(),
+        s.destinations.iter().map(|addr| truncate(addr)).collect(),
     ));
     let indices = if s.subaddr_indices.is_empty() {
         "none".to_string()
@@ -1430,7 +1978,12 @@ fn read_bytes_fs_limited(
         .open_file(path.to_string(), location, fs::OpenFlags { read: true, write: false, create: false })
         .map_err(|e| anyhow::anyhow!("open {path}: {e:?}"))?;
     let mut buf = Vec::new();
-    file.take(max).read_to_end(&mut buf).map_err(|e| anyhow::anyhow!("read {path}: {e:?}"))?;
+    file.take(max.saturating_add(1))
+        .read_to_end(&mut buf)
+        .map_err(|e| anyhow::anyhow!("read {path}: {e:?}"))?;
+    if buf.len() as u64 > max {
+        anyhow::bail!("{path} is too large (maximum {max} bytes)");
+    }
     Ok(buf)
 }
 
@@ -1556,6 +2109,17 @@ fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
 mod tests {
     use super::*;
 
+    fn dummy_output_entry(n: u8) -> monero::keyimage::OutEntry {
+        monero::keyimage::OutEntry {
+            pubkey: [n; 32],
+            tx_pubkey: [n.wrapping_add(1); 32],
+            additional: Vec::new(),
+            internal_idx: 0,
+            major: 0,
+            minor: 0,
+        }
+    }
+
     #[test]
     fn parses_cake_seed_uri() {
         let parsed = parse_cake_seed_qr("monero-wallet:?seed=alpha+beta%20gamma&height=3400000").unwrap();
@@ -1568,5 +2132,71 @@ mod tests {
         let parsed = parse_cake_seed_qr("alpha beta gamma").unwrap();
         assert_eq!(parsed.phrase, "alpha beta gamma");
         assert_eq!(parsed.restore_height, None);
+    }
+
+    #[test]
+    fn detects_bitcoin_address_qrs_before_monero_search() {
+        assert_eq!(
+            normalize_scanned_monero_address("bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh"),
+            Err(AddressScanError::Bitcoin)
+        );
+        assert_eq!(
+            normalize_scanned_monero_address("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy"),
+            Err(AddressScanError::Bitcoin)
+        );
+    }
+
+    #[test]
+    fn accepts_monero_shaped_address_qrs() {
+        let address =
+            "4APTP4HYNScMjNQdwkXCw2fYnVtJas2nxSSpCP3bBzSmKXEbdKjjvyWZCbtyNjaYXSc4RHQgiYtWqWpUpY1qC5KR7sUspfD";
+        assert_eq!(
+            normalize_scanned_monero_address(&format!("monero:{address}?tx_amount=1")).unwrap(),
+            address
+        );
+    }
+
+    #[test]
+    fn keyimage_sync_rejects_incremental_tail_without_cached_prefix() {
+        let mut cache = BTreeMap::new();
+        let export =
+            monero::keyimage::OutputExport { offset: 2, total: 3, entries: vec![dummy_output_entry(2)] };
+
+        match cache_and_choose_keyimage_export(&mut cache, export) {
+            KeyImageSyncDecision::MissingPrefix(missing) => {
+                assert_eq!(missing.requested_offset, 2);
+                assert_eq!(missing.total, 3);
+            }
+            KeyImageSyncDecision::Export(_) => panic!("partial tail should not be exported"),
+        }
+    }
+
+    #[test]
+    fn keyimage_sync_repairs_incremental_tail_with_cached_prefix() {
+        let mut cache = BTreeMap::new();
+        let first = monero::keyimage::OutputExport {
+            offset: 0,
+            total: 3,
+            entries: vec![dummy_output_entry(0), dummy_output_entry(1)],
+        };
+        let second =
+            monero::keyimage::OutputExport { offset: 2, total: 3, entries: vec![dummy_output_entry(2)] };
+
+        assert!(matches!(
+            cache_and_choose_keyimage_export(&mut cache, first),
+            KeyImageSyncDecision::Export(_)
+        ));
+
+        let KeyImageSyncDecision::Export(repaired) = cache_and_choose_keyimage_export(&mut cache, second)
+        else {
+            panic!("cached prefix should produce a repair export");
+        };
+
+        assert_eq!(repaired.offset, 0);
+        assert_eq!(repaired.total, 3);
+        assert_eq!(repaired.entries.len(), 3);
+        assert_eq!(repaired.entries[0].pubkey, [0; 32]);
+        assert_eq!(repaired.entries[1].pubkey, [1; 32]);
+        assert_eq!(repaired.entries[2].pubkey, [2; 32]);
     }
 }

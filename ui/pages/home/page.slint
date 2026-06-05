@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { HeadingLg, Icon, IconButton, JumboIcon, OverlayMenu, PopupMenuItem,
+import { HeadingLg, Icon, IconButton, OverlayMenu, PopupMenuItem,
          ScrollBody, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks, WalletRow } from "../../callbacks.slint";
@@ -71,6 +71,21 @@ component WalletCard inherits Rectangle {
     ]
 }
 
+component CakeLogoMark inherits Rectangle {
+    in property <length> mark-size: 118px;
+    width: mark-size;
+    height: mark-size;
+    background: #00000000;
+
+    Image {
+        source: @image-url("../../../assets/icons/cake-logo.png");
+        width: parent.width;
+        height: parent.height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+
 export component HomePagePage inherits Rectangle {
     in property <HomePageProps> props;
     property <bool> is-menu-open: false;
@@ -84,21 +99,37 @@ export component HomePagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            HorizontalLayout {
-                alignment: space-between;
-                padding-top: Size.sz4;
-                padding-left: Size.sz6;
-                padding-right: Size.sz6;
-                HeadingLg {
+            Rectangle {
+                height: Size.sz16;
+                if Callbacks.wallet-count < 3: HeadingLg {
                     text: "Wallets";
                     color: Cake.on-surface;
+                    horizontal-alignment: center;
                     vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
                 }
-                Rectangle { }
+                if Callbacks.wallet-count >= 3: HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: center;
+                    spacing: Size.sz2;
+
+                    CakeLogoMark {
+                        mark-size: 28px;
+                    }
+                    HeadingLg {
+                        text: "Wallets";
+                        color: Cake.on-surface;
+                        vertical-alignment: center;
+                    }
+                }
                 IconButton {
                     icon: "ellipsis";
-                    size: Size.sz8;
+                    size: Size.sz10;
                     importance: Importance.normal;
+                    x: parent.width - self.width - Size.sz6;
+                    y: (parent.height - self.height) / 2;
                     clicked => { is-menu-open = !is-menu-open; }
                 }
             }
@@ -112,33 +143,35 @@ export component HomePagePage inherits Rectangle {
 
                     if Callbacks.wallet-count <= 1: HorizontalLayout {
                         alignment: center;
-                        JumboIcon {
-                            name: "jumbo-circle";
-                            Image {
-                                source: @image-url("../../../assets/icons/cake.svg");
-                                width: IconSize.px96;
-                                height: IconSize.px96;
-                            }
+                        CakeLogoMark {
+                            mark-size: 118px;
                         }
                     }
 
-                    if Callbacks.wallet-count <= 1: TextMd {
+                    if Callbacks.wallet-count == 0: TextMd {
+                        text: "Import or create a wallet.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if Callbacks.wallet-count == 1: TextMd {
                         text: "Open the wallet to sign transactions or pair with Cake.";
                         color: Cake.on-surface-dim;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
 
+                    if Callbacks.wallet-count == 2: HorizontalLayout {
+                        alignment: center;
+                        CakeLogoMark {
+                            mark-size: 72px;
+                        }
+                    }
+
                     if Callbacks.status-text != "": TextSm {
                         text: Callbacks.status-text;
                         color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
-
-                    if Callbacks.wallet-count == 0: TextMd {
-                        text: "No active wallets. Import a Cake seed or create a Prime-derived wallet.";
-                        color: Cake.on-surface-dim;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }

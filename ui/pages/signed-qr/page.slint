@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, AnimatedQrCode } from "@ui/widgets.slint";
+import { CakeButton } from "../../cake-widgets.slint";
 import { Palette, Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SignedQrPageProps } from "./props.slint";
@@ -17,7 +18,7 @@ export component SignedQrPagePage inherits Rectangle {
     background: Cake.background;
 
     // Built once + stored (so the fountain encoder advances, not resets per frame).
-    property <[string]> signed-parts: Callbacks.get-signed-ur(400);
+    property <[string]> signed-parts: Callbacks.get-signed-ur(500);
 
     BasePage {
         background: Cake.background;
@@ -41,7 +42,7 @@ export component SignedQrPagePage inherits Rectangle {
                         alignment: center;
                         AnimatedQrCode {
                             parts: signed-parts;
-                            interval: 300ms;
+                            interval: 250ms;
                             animate: true;
                         }
                     }
@@ -53,13 +54,13 @@ export component SignedQrPagePage inherits Rectangle {
                     }
                 }
                 ButtonSection {
-                    Button {
+                    CakeButton {
                         label: "Save to file";
                         importance: Importance.normal;
                         enabled: Callbacks.signed-ok;
                         clicked => { Callbacks.save-signed-tx(); }
                     }
-                    Button {
+                    CakeButton {
                         label: TR2.lookup(TrId.Done);
                         importance: Importance.primary;
                         clicked => { Navigate.home-page({ }); }

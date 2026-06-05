@@ -14,9 +14,13 @@
 //! (byte-for-byte parity with cuprate-cryptonight), so decryption runs on the
 //! device too, not just host/sim.
 
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use super::{Error, Network, Result, TxSummary};
+
+const MAX_VECTOR_ITEMS: usize = 256;
+const MAX_SELECTED_TRANSFERS: usize = 4_096;
+const MAX_ORIGINAL_ADDRESS_BYTES: usize = 512;
 
 pub const MAGIC_UNSIGNED: &[u8] = b"Monero unsigned tx set";
 pub const MAGIC_SIGNED: &[u8] = b"Monero signed tx set";
@@ -30,20 +34,19 @@ pub const MAGIC_KEY_IMAGES: &[u8] = b"Monero key image export";
 /// session pays the cost; the key-image sync, unsigned-tx review, and signing after
 /// it are instant. Call `warm_chacha_key` once at startup to absorb even that first
 /// hit while the user is still navigating.
-static CHACHA_KEY_CACHE: Mutex<Option<([u8; 32], [u8; 32])>> = Mutex::new(None);
+static CHACHA_KEY_CACHE: Mutex<Option<HashMap<[u8; 32], [u8; 32]>>> = Mutex::new(None);
 
 /// Memoized `cn_slow_hash_v0(view_secret)` → 32-byte chacha key.
 pub fn chacha_key(view_secret: &[u8; 32]) -> [u8; 32] {
     {
         let guard = CHACHA_KEY_CACHE.lock().unwrap();
-        if let Some((vs, k)) = guard.as_ref() {
-            if vs == view_secret {
-                return *k;
-            }
+        if let Some(cache) = guard.as_ref().and_then(|cache| cache.get(view_secret)) {
+            return *cache;
         }
     }
     let k = cryptonight_noxous::cryptonight_hash_v0(view_secret);
-    *CHACHA_KEY_CACHE.lock().unwrap() = Some((*view_secret, k));
+    let mut guard = CHACHA_KEY_CACHE.lock().unwrap();
+    guard.get_or_insert_with(HashMap::new).insert(*view_secret, k);
     k
 }
 
@@ -174,7 +177,9 @@ pub fn decrypt_with_magic(file: &[u8], view_secret: &[u8; 32], magic: &[u8]) -> 
 /// Hs(prefix ‖ pubk ‖ comm) == c.
 fn verify_signature(prefix_hash: &[u8; 32], pubk: &[u8; 32], sig: &[u8; 64]) -> bool {
     use curve25519_dalek::{edwards::CompressedEdwardsY, edwards::EdwardsPoint, scalar::Scalar};
-    let Some(pub_point) = CompressedEdwardsY(*pubk).decompress() else { return false };
+    let Some(pub_point) = CompressedEdwardsY(*pubk).decompress() else {
+        return false;
+    };
     let mut cb = [0u8; 32];
     let mut rb = [0u8; 32];
     cb.copy_from_slice(&sig[..32]);
@@ -242,7 +247,11 @@ pub fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
     loop {
         let b = *buf.get(*pos)?;
         *pos += 1;
-        value |= ((b & 0x7f) as u64) << shift;
+        let part = (b & 0x7f) as u64;
+        if shift == 63 && part > 1 {
+            return None;
+        }
+        value |= part << shift;
         if b & 0x80 == 0 {
             return Some(value);
         }
@@ -318,7 +327,7 @@ fn read_32(buf: &[u8], pos: &mut usize) -> Option<[u8; 32]> {
 
 fn parse_source(buf: &[u8], pos: &mut usize) -> Option<ParsedSource> {
     let count = read_varint(buf, pos)? as usize;
-    if count == 0 || count > 256 {
+    if count == 0 || count > MAX_VECTOR_ITEMS {
         return None;
     }
     let mut ring = Vec::with_capacity(count);
@@ -333,6 +342,9 @@ fn parse_source(buf: &[u8], pos: &mut usize) -> Option<ParsedSource> {
     let real_output = read_u64_le(buf, pos)?;
     let real_out_tx_key = read_32(buf, pos)?;
     let add = read_varint(buf, pos)? as usize;
+    if add > MAX_VECTOR_ITEMS {
+        return None;
+    }
     let mut real_out_additional_tx_keys = Vec::with_capacity(add);
     for _ in 0..add {
         real_out_additional_tx_keys.push(read_32(buf, pos)?);
@@ -361,7 +373,7 @@ pub fn parse_sources(plaintext: &[u8]) -> Option<Vec<ParsedSource>> {
         return None; // txes count
     }
     let n = read_varint(plaintext, &mut p)? as usize;
-    if n == 0 || n > 256 {
+    if n == 0 || n > MAX_VECTOR_ITEMS {
         return None;
     }
     let mut sources = Vec::with_capacity(n);
@@ -459,6 +471,9 @@ fn skip_dest(b: &[u8], p: &mut usize) -> Option<()> {
     // tx_destination_entry: original(varint len+str) amount(varint) addr(64)
     //                        is_subaddress(1) is_integrated(1)
     let ol = read_varint(b, p)? as usize;
+    if ol > MAX_ORIGINAL_ADDRESS_BYTES {
+        return None;
+    }
     *p = p.checked_add(ol)?;
     read_varint(b, p)?; // amount
     *p = p.checked_add(64 + 2)?;
@@ -479,6 +494,9 @@ pub fn parse_construction_data(pt: &[u8]) -> Option<CdataSpans> {
     let cdata_start = p;
     // sources
     let nsrc = read_varint(pt, &mut p)? as usize;
+    if nsrc == 0 || nsrc > MAX_VECTOR_ITEMS {
+        return None;
+    }
     for _ in 0..nsrc {
         parse_source(pt, &mut p)?;
     }
@@ -488,12 +506,18 @@ pub fn parse_construction_data(pt: &[u8]) -> Option<CdataSpans> {
     let change_dts = (cd_s, p);
     // splitted_dsts
     let nsd = read_varint(pt, &mut p)? as usize;
+    if nsd > MAX_VECTOR_ITEMS {
+        return None;
+    }
     for _ in 0..nsd {
         skip_dest(pt, &mut p)?;
     }
     // selected_transfers (vec<size_t> as varints)
     let st_s = p;
     let nst = read_varint(pt, &mut p)? as usize;
+    if nst > MAX_SELECTED_TRANSFERS {
+        return None;
+    }
     for _ in 0..nst {
         read_varint(pt, &mut p)?;
     }
@@ -512,6 +536,9 @@ pub fn parse_construction_data(pt: &[u8]) -> Option<CdataSpans> {
     // dests
     let de_s = p;
     let nd = read_varint(pt, &mut p)? as usize;
+    if nd > MAX_VECTOR_ITEMS {
+        return None;
+    }
     for _ in 0..nd {
         skip_dest(pt, &mut p)?;
     }
@@ -565,7 +592,7 @@ pub struct DestEntry {
 pub fn parse_dest_entries(pt: &[u8], span: (usize, usize)) -> Option<Vec<DestEntry>> {
     let mut p = span.0;
     let n = read_varint(pt, &mut p)? as usize;
-    if n > 256 {
+    if n > MAX_VECTOR_ITEMS {
         return None;
     }
     let mut out = Vec::with_capacity(n);
@@ -573,6 +600,9 @@ pub fn parse_dest_entries(pt: &[u8], span: (usize, usize)) -> Option<Vec<DestEnt
         // original(varint len+str) amount(varint) addr(spend32+view32)
         //   is_subaddress(1) is_integrated(1)
         let ol = read_varint(pt, &mut p)? as usize;
+        if ol > MAX_ORIGINAL_ADDRESS_BYTES {
+            return None;
+        }
         let original_end = p.checked_add(ol)?;
         let original = String::from_utf8_lossy(pt.get(p..original_end)?).into_owned();
         p = original_end;
