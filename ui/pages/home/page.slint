@@ -1,32 +1,100 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, TextSm, BasePage, PageBody, JumboIcon, Icon, IconButton, OverlayMenu, PopupMenuItem } from "@ui/widgets.slint";
-import { Palette, Size, Importance, IconSize } from "@ui/theme.slint";
-import { Callbacks } from "../../callbacks.slint";
+import { HeadingLg, Icon, IconButton, JumboIcon, OverlayMenu, PopupMenuItem,
+         ScrollBody, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size, IconSize } from "@ui/theme.slint";
+import { Callbacks, WalletRow } from "../../callbacks.slint";
 import { HomePageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
-import { TR2, TrId } from "../../gen/tr.slint";
 import { Cake } from "../../cake-theme.slint";
 
-// Cake Wallet offline signer — home. Passport is the COLD wallet (holds the
-// Monero spend key, never online); Cake mobile is the watch-only wallet. The
-// overflow menu (top right) holds the recovery seed; the main CTAs are Sign
-// (scan Cake's unsigned tx) and Pair with Cake.
+component WalletCard inherits Rectangle {
+    in property <WalletRow> wallet;
+    callback clicked;
+
+    height: 78px;
+    background: Cake.surface;
+    border-radius: Size.sz3;
+    clip: true;
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        spacing: Size.sz3;
+
+        VerticalLayout {
+            width: Size.sz11;
+            alignment: center;
+            Rectangle {
+                width: Size.sz11;
+                height: Size.sz11;
+                border-radius: Size.sz6;
+                background: wallet.archived ? Cake.surface-alt : (wallet.derived ? Cake.blue : Cake.monero);
+                Icon {
+                    name: wallet.archived ? "archive" : (wallet.derived ? "device" : "import");
+                    size: IconSize.px32;
+                    color: wallet.archived ? Cake.on-surface-dim : (wallet.derived ? Cake.background : Cake.on-surface);
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            TextLg {
+                text: wallet.name;
+                color: Cake.on-surface;
+                bold: true;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "chevron-right";
+                color: Cake.on-surface-dim;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    states [
+        pressed when touch.pressed: {
+            root.background: Cake.surface-alt;
+        }
+    ]
+}
+
 export component HomePagePage inherits Rectangle {
     in property <HomePageProps> props;
     property <bool> is-menu-open: false;
     background: Cake.background;
 
+    init => {
+        Callbacks.select-first-active-wallet();
+    }
+
     BasePage {
         background: Cake.background;
 
         VerticalLayout {
-            // Slim top bar: overflow menu only (no title, so content sits high).
             HorizontalLayout {
-                alignment: end;
+                alignment: space-between;
                 padding-top: Size.sz4;
+                padding-left: Size.sz6;
                 padding-right: Size.sz6;
+                HeadingLg {
+                    text: "Wallets";
+                    color: Cake.on-surface;
+                    vertical-alignment: center;
+                }
+                Rectangle { }
                 IconButton {
                     icon: "ellipsis";
                     size: Size.sz8;
@@ -34,83 +102,92 @@ export component HomePagePage inherits Rectangle {
                     clicked => { is-menu-open = !is-menu-open; }
                 }
             }
-            PageBody {
-                ContentSection {
-                    spacing: Size.sz3;
 
-                    HorizontalLayout {
+            ScrollBody {
+                p-x: Size.sz6;
+                p-y: Size.sz4;
+
+                VerticalLayout {
+                    spacing: Size.sz4;
+
+                    if Callbacks.wallet-count <= 1: HorizontalLayout {
                         alignment: center;
                         JumboIcon {
                             name: "jumbo-circle";
-                            Icon {
-                                name: "cake"; // ui/ui/icons/cake.svg (Cake Wallet mark)
-                                size: IconSize.px96;
-                                color: Cake.blue;
+                            Image {
+                                source: @image-url("../../../assets/icons/cake.svg");
+                                width: IconSize.px96;
+                                height: IconSize.px96;
                             }
                         }
                     }
-                    HeadingLg {
-                        text: TR2.lookup(TrId.HomeTitle);
-                        horizontal-alignment: center;
-                    }
-                    TextMd {
-                        text: TR2.lookup(TrId.HomeSubtitle);
+
+                    if Callbacks.wallet-count <= 1: TextMd {
+                        text: "Open the wallet to sign transactions or pair with Cake.";
                         color: Cake.on-surface-dim;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
+
                     if Callbacks.status-text != "": TextSm {
                         text: Callbacks.status-text;
                         color: Cake.warning;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
-                }
 
-                ButtonSection {
-                    // Sign: opens the camera, scans Cake's unsigned-tx QR, then
-                    // goes to review → sign.
-                    Button {
-                        label: TR2.lookup(TrId.HomeSignTransaction);
-                        importance: Importance.normal;
+                    if Callbacks.wallet-count == 0: TextMd {
+                        text: "No active wallets. Import a Cake seed or create a Prime-derived wallet.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    for wallet in Callbacks.wallets: WalletCard {
+                        wallet: wallet;
                         clicked => {
-                            Callbacks.scan-unsigned-tx();
-                            // Cake's flow: first an output/key-image sync, then the
-                            // unsigned tx. Route to whichever the scan produced.
-                            if Callbacks.tx-loaded {
-                                Navigate.review-page({ });
-                            } else if Callbacks.keyimages-ready {
-                                Navigate.keyimage-qr-page({ });
+                            if Callbacks.select-wallet(wallet.id) {
+                                Navigate.wallet-detail-page({ });
                             }
                         }
                     }
-                    // Primary CTA at the bottom: one-time pairing QR for Cake.
-                    Button {
-                        label: TR2.lookup(TrId.HomePairQr);
-                        importance: Importance.primary;
-                        clicked => {
-                            Callbacks.prepare-pair-qr();
-                            Navigate.pair-page({ });
-                        }
-                    }
+
+                    Rectangle { height: Size.sz4; }
                 }
             }
         }
 
-        // Overflow menu: recovery seed lives here, not on the main screen.
         if is-menu-open: OverlayMenu {
+            width: parent.width;
+            height: parent.height;
             touched-off => {
                 is-menu-open = false;
             }
             PopupMenuItem {
-                label: TR2.lookup(TrId.MenuViewSeed);
-                icon: "eye";
+                label: "Import wallet";
+                icon: "import";
                 first: true;
+                clicked => {
+                    is-menu-open = false;
+                    Navigate.import-wallet-page({ });
+                }
+            }
+            PopupMenuItem {
+                label: "Create wallet";
+                icon: "plus";
+                clicked => {
+                    is-menu-open = false;
+                    Navigate.create-wallet-page({ });
+                }
+            }
+            PopupMenuItem {
+                label: "Archived wallets";
+                icon: "archive";
+                enabled: Callbacks.archived-wallet-count > 0;
                 last: true;
                 clicked => {
                     is-menu-open = false;
-                    Callbacks.prepare-seed-words();
-                    Navigate.seed-page({ });
+                    Navigate.wallet-manager-page({ });
                 }
             }
         }

@@ -36,16 +36,16 @@ export component SignDonePagePage inherits Rectangle {
             }
         }
         ButtonSection {
+            Button {
+                label: TR2.lookup(TrId.Done);
+                importance: Importance.normal;
+                clicked => { Navigate.home-page({ }); }
+            }
             // Hand the signed tx to Cake over the air as an animated UR QR.
             Button {
                 label: TR2.lookup(TrId.SignedQrShow);
                 importance: Importance.primary;
                 clicked => { Navigate.signed-qr-page({ }); }
-            }
-            Button {
-                label: TR2.lookup(TrId.Done);
-                importance: Importance.normal;
-                clicked => { Navigate.home-page({ }); }
             }
         }
     }

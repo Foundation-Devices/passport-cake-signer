@@ -1,0 +1,135 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button, ButtonSection, ContentSection, HeadingLg, Input, NavHeader,
+         PageBody, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { VerifyAddressPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component VerifyAddressPagePage inherits Rectangle {
+    in property <VerifyAddressPageProps> props;
+    property <string> account: "0";
+    property <string> subaddress: "0";
+    background: Cake.background;
+
+    init => {
+        Callbacks.clear-verify-address();
+    }
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: "Verify address";
+                clicked => { Navigate.wallet-detail-page({ }); }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    HeadingLg {
+                        text: "Check a Cake address";
+                        horizontal-alignment: center;
+                    }
+
+                    TextMd {
+                        text: "Scan a Cake address QR to confirm it belongs to this Prime wallet, or derive a known account/subaddress pair.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Size.sz2;
+                        Input {
+                            text <=> account;
+                            placeholder: "Account";
+                            input-type: InputType.number;
+                            show-clear-btn: false;
+                        }
+                        Input {
+                            text <=> subaddress;
+                            placeholder: "Subaddress";
+                            input-type: InputType.number;
+                            show-clear-btn: false;
+                        }
+                    }
+
+                    if Callbacks.verify-ready: Panel {
+                        background: Cake.surface;
+                        border-radius: Size.sz3;
+                        VerticalLayout {
+                            padding: Size.sz4;
+                            spacing: Size.sz3;
+                            TextLg {
+                                text: Callbacks.verify-title;
+                                color: Callbacks.verify-matched ? Cake.success : Cake.warning;
+                                bold: true;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            TextSm {
+                                text: Callbacks.verify-detail;
+                                color: Cake.on-surface-dim;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            TextSm {
+                                text: Callbacks.verify-address;
+                                color: Cake.on-surface;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            if Callbacks.verify-address != "": HorizontalLayout {
+                                alignment: center;
+                                Qrcode {
+                                    data: Callbacks.verify-address;
+                                    width: 180px;
+                                    height: 180px;
+                                }
+                            }
+                        }
+                    }
+
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    Button {
+                        label: "Show derived address";
+                        icon: "eye";
+                        importance: Importance.normal;
+                        clicked => { Callbacks.verify-address-index(account, subaddress); }
+                    }
+                    if Callbacks.verify-ready: Button {
+                        label: "Scan another";
+                        icon: "scan-qr";
+                        importance: Importance.normal;
+                        clicked => { Callbacks.verify-address-scan(); }
+                    }
+                    if !Callbacks.verify-ready: Button {
+                        label: "Scan address QR";
+                        icon: "scan-qr";
+                        importance: Importance.primary;
+                        clicked => { Callbacks.verify-address-scan(); }
+                    }
+                    if Callbacks.verify-ready: Button {
+                        label: "Done";
+                        importance: Importance.primary;
+                        clicked => { Navigate.wallet-detail-page({ }); }
+                    }
+                }
+            }
+        }
+    }
+}

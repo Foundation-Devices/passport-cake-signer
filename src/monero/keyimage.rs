@@ -15,8 +15,8 @@
 use curve25519_dalek::{edwards::CompressedEdwardsY, edwards::EdwardsPoint, scalar::Scalar};
 use monero_wallet::ed25519::Point as SeraiPoint;
 
-use super::keys::MoneroKeys;
 use super::keccak256;
+use super::keys::{subaddress_secret, MoneroKeys};
 use super::txset::{decrypt_with_magic, encrypt_tx_set, read_varint};
 
 pub const MAGIC_OUTPUTS: &[u8] = b"Monero output export";
@@ -24,23 +24,12 @@ pub const MAGIC_KEY_IMAGES: &[u8] = b"Monero key image export";
 
 #[derive(Debug)]
 pub struct OutEntry {
-    pub pubkey: [u8; 32],            // one-time output pubkey P
-    pub tx_pubkey: [u8; 32],         // main tx pubkey R
-    pub additional: Vec<[u8; 32]>,   // per-output tx pubkeys (subaddress sends)
-    pub internal_idx: u64,           // output index within its tx
-    pub major: u32,                  // subaddress account
-    pub minor: u32,                  // subaddress index (0,0 = primary address)
-}
-
-/// Subaddress secret offset m = Hs("SubAddr\0" ‖ a ‖ major(LE) ‖ minor(LE)).
-/// The subaddress spend key is (b + m)·G.
-fn subaddress_secret(view: &[u8; 32], major: u32, minor: u32) -> Scalar {
-    let mut data = Vec::with_capacity(48);
-    data.extend_from_slice(b"SubAddr\0"); // 8 bytes incl. null terminator
-    data.extend_from_slice(view);
-    data.extend_from_slice(&major.to_le_bytes());
-    data.extend_from_slice(&minor.to_le_bytes());
-    hs(&data)
+    pub pubkey: [u8; 32],          // one-time output pubkey P
+    pub tx_pubkey: [u8; 32],       // main tx pubkey R
+    pub additional: Vec<[u8; 32]>, // per-output tx pubkeys (subaddress sends)
+    pub internal_idx: u64,         // output index within its tx
+    pub major: u32,                // subaddress account
+    pub minor: u32,                // subaddress index (0,0 = primary address)
 }
 
 fn read_32(buf: &[u8], p: &mut usize) -> Option<[u8; 32]> {
@@ -69,9 +58,7 @@ fn write_varint(mut v: u64, out: &mut Vec<u8>) {
         }
     }
 }
-fn hs(d: &[u8]) -> Scalar {
-    Scalar::from_bytes_mod_order(keccak256(d))
-}
+fn hs(d: &[u8]) -> Scalar { Scalar::from_bytes_mod_order(keccak256(d)) }
 
 /// Parse a decrypted wallet2 output-export plaintext: spend_pub(32) view_pub(32)
 /// then a serialized tuple (size, offset, total, vec<exported_transfer_details>).
@@ -119,11 +106,8 @@ fn output_secret(e: &OutEntry, keys: &MoneroKeys) -> Option<Scalar> {
     let view = keys.view_secret_bytes();
     let a = Scalar::from_bytes_mod_order(view);
     let b = Scalar::from_bytes_mod_order(keys.spend_secret_bytes());
-    let m = if e.major == 0 && e.minor == 0 {
-        Scalar::ZERO
-    } else {
-        subaddress_secret(&view, e.major, e.minor)
-    };
+    let m =
+        if e.major == 0 && e.minor == 0 { Scalar::ZERO } else { subaddress_secret(&view, e.major, e.minor) };
 
     // Candidate tx pubkeys: the main key, then this output's additional key.
     let mut candidates: Vec<[u8; 32]> = vec![e.tx_pubkey];
@@ -197,4 +181,3 @@ pub fn export_key_images(output_file: &[u8], keys: &MoneroKeys) -> Option<Vec<u8
     iv.copy_from_slice(&iv8[..8]);
     Some(encrypt_tx_set(&plain, &view_secret, &view_pub, MAGIC_KEY_IMAGES, 0x03, iv))
 }
-

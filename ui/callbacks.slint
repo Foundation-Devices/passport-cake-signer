@@ -3,6 +3,16 @@
 
 // Bridge between the Rust app (src/main.rs) and the Slint UI. The Rust side
 // sets the properties and handles the callbacks; the pages read/invoke them.
+export struct WalletRow {
+    id: string,
+    name: string,
+    kind: string,
+    address: string,
+    detail: string,
+    archived: bool,
+    derived: bool,
+}
+
 export global Callbacks {
     // --- One-time pairing -------------------------------------------------
     // Export this Passport's Monero view-only credentials (primary address +
@@ -43,6 +53,45 @@ export global Callbacks {
     callback clear-seed-words();
     in-out property <[string]> seed-words;
 
+    // --- Wallet identity --------------------------------------------------
+    callback switch-next-wallet();
+    callback select-wallet(string) -> bool;
+    callback select-first-active-wallet() -> bool;
+    callback add-device-wallet-slot() -> bool;
+    callback import-seed-file() -> bool;
+    callback import-seed-qr() -> bool;
+    callback import-seed-text(string) -> bool;
+    pure callback seed-import-preview(string) -> string;
+    callback rename-active-wallet(string) -> bool;
+    callback archive-active-wallet() -> bool;
+    callback restore-active-wallet() -> bool;
+    callback delete-active-wallet() -> bool;
+    callback clear-verify-address();
+    callback verify-address-scan();
+    callback verify-address-index(string, string) -> bool;
+    in-out property <string> wallet-id;
+    in-out property <string> wallet-label;
+    in-out property <string> wallet-kind;
+    in-out property <string> wallet-address;
+    in-out property <string> wallet-address-full;
+    in-out property <string> wallet-detail;
+    in-out property <string> wallet-rename-value;
+    in-out property <[string]> wallet-list;
+    in-out property <[WalletRow]> wallets;
+    in-out property <[WalletRow]> archived-wallets;
+    in-out property <bool> wallet-derived;
+    in-out property <int> wallet-count;
+    in-out property <int> archived-wallet-count;
+    in-out property <bool> wallet-archived;
+    in-out property <bool> wallet-can-archive;
+    in-out property <bool> wallet-can-restore;
+    in-out property <bool> wallet-can-delete;
+    in-out property <bool> verify-ready;
+    in-out property <bool> verify-matched;
+    in-out property <string> verify-title;
+    in-out property <string> verify-detail;
+    in-out property <string> verify-address;
+
     // --- Signing flow -----------------------------------------------------
     // Import an unsigned_monero_tx file (built by the Cake mobile watch-only
     // wallet) from a file picker. Populates the review properties below.
@@ -61,6 +110,9 @@ export global Callbacks {
     in-out property <string> change-xmr;            // change returned to this wallet, formatted
     in-out property <string> fee-xmr;               // network fee, formatted ("—" until computed)
     in-out property <string> dest-address;          // recipient, truncated
+    in-out property <[string]> dest-addresses;      // full recipient addresses
+    in-out property <[string]> dest-address-labels; // recipient amount + truncated address
+    in-out property <string> tx-account-info;       // Cake account/subaddress metadata
     in-out property <int>    output-count;
     in-out property <bool>   tx-loaded;             // gate the Sign button
     in-out property <bool>   signed-ok;             // true only if signing actually succeeded

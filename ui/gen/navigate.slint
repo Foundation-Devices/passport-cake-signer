@@ -42,11 +42,23 @@ export global Navigate {
     // /home
     callback home-page(NavigateOptions);
     
+    // /create-wallet
+    callback create-wallet-page(NavigateOptions);
+    
+    // /delete-wallet-confirm
+    callback delete-wallet-confirm-page(NavigateOptions);
+    
+    // /import-wallet
+    callback import-wallet-page(NavigateOptions);
+    
     // /keyimage-qr
     callback keyimage-qr-page(NavigateOptions);
     
     // /pair
     callback pair-page(NavigateOptions);
+    
+    // /rename-wallet
+    callback rename-wallet-page(NavigateOptions);
     
     // /review
     callback review-page(NavigateOptions);
@@ -59,15 +71,31 @@ export global Navigate {
     
     // /signed-qr
     callback signed-qr-page(NavigateOptions);
+    
+    // /verify-address
+    callback verify-address-page(NavigateOptions);
+    
+    // /wallet-detail
+    callback wallet-detail-page(NavigateOptions);
+    
+    // /wallet-manager
+    callback wallet-manager-page(NavigateOptions);
 }
 
 export global RoutePath {
     out property <string> home-page : "/home";
+    out property <string> create-wallet-page : "/create-wallet";
+    out property <string> delete-wallet-confirm-page : "/delete-wallet-confirm";
+    out property <string> import-wallet-page : "/import-wallet";
     out property <string> keyimage-qr-page : "/keyimage-qr";
     out property <string> pair-page : "/pair";
+    out property <string> rename-wallet-page : "/rename-wallet";
     out property <string> review-page : "/review";
     out property <string> seed-page : "/seed";
     out property <string> sign-done-page : "/sign-done";
     out property <string> signed-qr-page : "/signed-qr";
+    out property <string> verify-address-page : "/verify-address";
+    out property <string> wallet-detail-page : "/wallet-detail";
+    out property <string> wallet-manager-page : "/wallet-manager";
 }
 

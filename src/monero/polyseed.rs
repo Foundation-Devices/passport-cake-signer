@@ -51,12 +51,8 @@ pub fn derive(app_seed: &[u8; 32]) -> Polyseed {
 }
 
 /// The 16-word English seed phrase, for the (gated) Show-seed screen.
-pub fn seed_words(app_seed: &[u8; 32]) -> Zeroizing<String> {
-    derive(app_seed).to_string()
-}
+pub fn seed_words(app_seed: &[u8; 32]) -> Zeroizing<String> { derive(app_seed).to_string() }
 
 /// The 32-byte Polyseed secret (pre-reduction); the caller reduces to the spend
 /// scalar. Zeroized on drop.
-pub fn spend_key_bytes(app_seed: &[u8; 32]) -> Zeroizing<[u8; 32]> {
-    derive(app_seed).key()
-}
+pub fn spend_key_bytes(app_seed: &[u8; 32]) -> Zeroizing<[u8; 32]> { derive(app_seed).key() }

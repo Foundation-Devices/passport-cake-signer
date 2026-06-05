@@ -43,6 +43,9 @@ sha3 = { version = "0.10", default-features = false }
 # is ALL-TARGET (device + sim must derive the same wallet). no_std (alloc) via
 # default-features = false. Proven in ../../../monero-cold-core (polyseed.rs).
 polyseed = { git = "https://github.com/kayabaNerve/monero-wallet-util", default-features = false }
+# Legacy 24/25-word Monero mnemonic parser from the same audited utility repo
+# as Polyseed. Used only for importing an existing Monero seed into this app.
+monero-seed = { git = "https://github.com/kayabaNerve/monero-wallet-util", default-features = false }
 # Zeroizing secret material (Polyseed entropy/key); all-target since key
 # derivation runs on device + sim.
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
@@ -53,6 +56,7 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 # cuprate-cryptonight) so it builds + runs on xous, not just host/sim.
 cryptonight-noxous = { path = "../../../cryptonight-noxous" }
 chacha20 = { version = "0.9", default-features = false }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 # RingCT/CLSAG + Bulletproof+ signing (serai / monero-oxide). no_std (alloc);
 # the signer seeds a deterministic ChaCha20Rng, so no getrandom on xous.
 monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide.git", default-features = false }

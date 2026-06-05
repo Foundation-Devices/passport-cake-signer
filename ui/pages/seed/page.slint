@@ -12,8 +12,9 @@ import { Cake } from "../../cake-theme.slint";
 component SeedWordItem inherits Rectangle {
     in property <int> index;
     in property <string> word;
+    in property <bool> compact: false;
 
-    height: 52px;
+    height: compact ? 36px : 52px;
     width: 222px;
     background: Cake.surface;
     border-radius: Size.sz3;
@@ -39,10 +40,10 @@ component SeedWordItem inherits Rectangle {
     }
 }
 
-// 16-word Polyseed recovery phrase. Derived deterministically from the Passport
-// app seed, so it is reproducible (re-deriving on this device gives the same
-// words) and restores the wallet in Cake / any Polyseed wallet. Secret: only
-// rendered after the user opts in from Home.
+// Wallet recovery phrase. Device-slot wallets are derived deterministically
+// from the Passport app seed and slot number; imported wallets show the sealed
+// phrase the user imported. Secret: only rendered after the user opts in from
+// a wallet-specific menu.
 export component SeedPagePage inherits Rectangle {
     in property <SeedPageProps> props;
     background: Cake.background;
@@ -56,7 +57,7 @@ export component SeedPagePage inherits Rectangle {
                 left-icon: "chevron-left";
                 clicked => {
                     Callbacks.clear-seed-words();
-                    Navigate.home-page({ });
+                    Navigate.wallet-detail-page({ });
                 }
             }
             PageBody {
@@ -70,19 +71,28 @@ export component SeedPagePage inherits Rectangle {
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
+                    TextSm {
+                        text: "Showing seed for " + Callbacks.wallet-label;
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
                     VerticalLayout {
                         alignment: center;
                         spacing: Size.sz2;
 
-                        for row in 8: HorizontalLayout {
+                        for row in 13: HorizontalLayout {
                             alignment: center;
                             spacing: Size.sz2;
+                            visible: row < (Callbacks.seed-words.length <= 16 ? 8 : 13);
 
                             for col in 2: SeedWordItem {
-                                property <int> word-index: row + col * 8;
+                                property <int> row-count: Callbacks.seed-words.length <= 16 ? 8 : 13;
+                                property <int> word-index: row + col * row-count;
                                 visible: word-index < Callbacks.seed-words.length;
                                 index: word-index;
                                 word: word-index < Callbacks.seed-words.length ? Callbacks.seed-words[word-index] : "";
+                                compact: Callbacks.seed-words.length > 16;
                             }
                         }
                     }
@@ -100,7 +110,7 @@ export component SeedPagePage inherits Rectangle {
                         importance: Importance.primary;
                         clicked => {
                             Callbacks.clear-seed-words();
-                            Navigate.home-page({ });
+                            Navigate.wallet-detail-page({ });
                         }
                     }
                 }

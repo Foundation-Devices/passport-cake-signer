@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, AppHeader, Button, SlideToButton, TextLg, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
-import { Palette, Size, Importance } from "@ui/theme.slint";
+import { ButtonSection, ContentSection, HeadingLg, HeadingMd, AppHeader, Button, SlideToButton, TextLg, TextMd, TextSm, BasePage, PageBody, Panel } from "@ui/widgets.slint";
+import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { ReviewPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -21,8 +21,49 @@ component Row inherits HorizontalLayout {
     TextMd { text: value; color: value-color; horizontal-alignment: right; }
 }
 
+component AddressRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    callback clicked;
+
+    height: Size.sz12;
+    border-radius: Size.sz3;
+
+    HorizontalLayout {
+        spacing: Size.sz2;
+        padding-left: Size.sz2;
+        padding-right: Size.sz2;
+
+        TextMd {
+            text: label;
+            color: Cake.on-surface-dim;
+            vertical-alignment: center;
+        }
+        Rectangle { }
+        TextMd {
+            text: value;
+            color: Cake.on-surface;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    states [
+        pressed when touch.pressed: {
+            root.background: Cake.surface-alt;
+        }
+    ]
+}
+
 export component ReviewPagePage inherits Rectangle {
     in property <ReviewPageProps> props;
+    property <bool> is-address-open: false;
+    property <string> selected-dest-address: "";
     background: Cake.background;
 
     BasePage {
@@ -45,7 +86,14 @@ export component ReviewPagePage inherits Rectangle {
                         }
                     }
 
-                    Row { label: TR2.lookup(TrId.ReviewTo);      value: Callbacks.dest-address; }
+                    for recipient[index] in Callbacks.dest-address-labels: AddressRow {
+                        label: index == 0 ? TR2.lookup(TrId.ReviewTo) : "";
+                        value: recipient;
+                        clicked => {
+                            selected-dest-address = Callbacks.dest-addresses[index];
+                            is-address-open = true;
+                        }
+                    }
                     Row { label: TR2.lookup(TrId.ReviewChange);  value: Callbacks.change-xmr + " XMR"; }
                     Row {
                         label: TR2.lookup(TrId.ReviewFee);
@@ -53,6 +101,7 @@ export component ReviewPagePage inherits Rectangle {
                     }
                     Row { label: TR2.lookup(TrId.ReviewOutputs); value: Callbacks.output-count; }
                     Row { label: TR2.lookup(TrId.ReviewFrom);    value: Callbacks.primary-address; }
+                    Row { label: "Cake source"; value: Callbacks.tx-account-info; }
 
                     if Callbacks.status-text != "": TextSm {
                         text: Callbacks.status-text;
@@ -62,6 +111,11 @@ export component ReviewPagePage inherits Rectangle {
                 }
 
                 ButtonSection {
+                    Button {
+                        label: TR2.lookup(TrId.Cancel);
+                        importance: Importance.normal;
+                        clicked => { Navigate.home-page({ }); }
+                    }
                     if Callbacks.tx-loaded && Callbacks.status-text == "": SlideToButton {
                         label: "Sign";
                         info-label: TR2.lookup(TrId.ReviewSign);
@@ -85,10 +139,48 @@ export component ReviewPagePage inherits Rectangle {
                         importance: Importance.primary;
                         enabled: false;
                     }
+                }
+            }
+        }
+
+        if is-address-open: Rectangle {
+            z: 200;
+            width: parent.width;
+            height: parent.height;
+            background: Palette.overlay;
+
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => { is-address-open = false; }
+            }
+
+            Panel {
+                width: UISize.modal-width;
+                height: 300px;
+                x: (parent.width - self.width) / 2;
+                y: Size.sz16;
+                background: Cake.surface;
+
+                VerticalLayout {
+                    padding: Size.sz6;
+                    spacing: Size.sz4;
+
+                    HeadingMd {
+                        text: "Recipient address";
+                        horizontal-alignment: center;
+                    }
+                    TextSm {
+                        text: selected-dest-address;
+                        color: Cake.on-surface;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { }
                     Button {
-                        label: TR2.lookup(TrId.Cancel);
-                        importance: Importance.normal;
-                        clicked => { Navigate.home-page({ }); }
+                        label: TR2.lookup(TrId.Done);
+                        importance: Importance.primary;
+                        clicked => { is-address-open = false; }
                     }
                 }
             }

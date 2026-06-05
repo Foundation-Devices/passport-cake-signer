@@ -40,10 +40,6 @@ impl core::fmt::Display for SignError {
 // device too; the signer seeds a deterministic ChaCha20Rng so no getrandom.
 // ---------------------------------------------------------------------------
 mod imp {
-    use super::{MoneroKeys, Network, SignError};
-    use crate::monero::keccak256;
-    use crate::monero::txset::{decrypt, parse_sources, ParsedSource};
-
     use monero_wallet::{
         address::{MoneroAddress, Network as SeraiNetwork},
         ed25519::{Point as SeraiPoint, Scalar as SeraiScalar},
@@ -53,6 +49,11 @@ mod imp {
     };
     use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
     use zeroize::Zeroizing;
+
+    use super::{MoneroKeys, Network, SignError};
+    use crate::monero::keccak256;
+    use crate::monero::keys::subaddress_secret;
+    use crate::monero::txset::{decrypt, parse_sources, ParsedSource};
 
     fn write_varint(mut v: u64, out: &mut Vec<u8>) {
         loop {
@@ -71,24 +72,84 @@ mod imp {
         curve25519_dalek::scalar::Scalar::from_bytes_mod_order(keccak256(d))
     }
 
-    /// key_offset = Hs( 8·a·R ‖ varint(output_index) ).
-    fn key_offset(view_secret: &[u8; 32], real_out_tx_key: &[u8; 32], idx: u64) -> [u8; 32] {
+    fn output_key_offset(
+        view_secret: &[u8; 32],
+        real_out_tx_key: &[u8; 32],
+        idx: u64,
+    ) -> Option<curve25519_dalek::scalar::Scalar> {
         use curve25519_dalek::{edwards::CompressedEdwardsY, scalar::Scalar};
         let a = Scalar::from_bytes_mod_order(*view_secret);
-        let r = CompressedEdwardsY(*real_out_tx_key).decompress().expect("valid R");
+        let r = CompressedEdwardsY(*real_out_tx_key).decompress()?;
         let deriv = (a * r).mul_by_cofactor();
         let mut data = deriv.compress().to_bytes().to_vec();
         write_varint(idx, &mut data);
-        *hash_to_scalar(&data).as_bytes()
+        Some(hash_to_scalar(&data))
+    }
+
+    /// Derive the per-input offset serai adds to the wallet spend key. Primary
+    /// inputs use Hs(8*a*R || idx). Subaddress inputs must add
+    /// Hs("SubAddr\0" || a || account || minor). Try the wallet2 source tx keys
+    /// and selected subaddress indices, then keep only the candidate which
+    /// reproduces the real one-time output public key.
+    fn input_key_offset(
+        src: &ParsedSource,
+        keys: &MoneroKeys,
+        account: u32,
+        subaddr_indices: &[u32],
+    ) -> Option<[u8; 32]> {
+        use curve25519_dalek::edwards::EdwardsPoint;
+        let view_secret = keys.view_secret_bytes();
+        let spend_secret = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(keys.spend_secret_bytes());
+        let real = src.ring.get(src.real_output as usize)?;
+
+        let mut tx_keys = vec![src.real_out_tx_key];
+        if let Some(additional) = src.real_out_additional_tx_keys.get(src.real_output_in_tx_index as usize) {
+            tx_keys.push(*additional);
+        }
+
+        let mut indices = vec![0u32];
+        for index in subaddr_indices {
+            if !indices.contains(index) {
+                indices.push(*index);
+            }
+        }
+
+        for tx_key in tx_keys {
+            let Some(base_offset) = output_key_offset(&view_secret, &tx_key, src.real_output_in_tx_index)
+            else {
+                continue;
+            };
+            for minor in &indices {
+                let sub_offset = if account == 0 && *minor == 0 {
+                    curve25519_dalek::scalar::Scalar::ZERO
+                } else {
+                    subaddress_secret(&view_secret, account, *minor)
+                };
+                let key_offset = base_offset + sub_offset;
+                let one_time = EdwardsPoint::mul_base(&(spend_secret + key_offset)).compress().to_bytes();
+                if one_time == real.dest {
+                    return Some(*key_offset.as_bytes());
+                }
+            }
+        }
+        None
     }
 
     /// Serialize an OutputWithDecoys in serai's wire format (its fields are
     /// private, so we build it via `read`).
-    fn input_bytes(src: &ParsedSource, view_secret: &[u8; 32]) -> Vec<u8> {
+    fn input_bytes(
+        src: &ParsedSource,
+        keys: &MoneroKeys,
+        account: u32,
+        subaddr_indices: &[u32],
+    ) -> Result<Vec<u8>, SignError> {
         let mut b = Vec::with_capacity(128 + src.ring.len() * 64);
-        let real = &src.ring[src.real_output as usize];
+        let real = src.ring.get(src.real_output as usize).ok_or(SignError::Parse("real output index"))?;
         b.extend_from_slice(&real.dest);
-        b.extend_from_slice(&key_offset(view_secret, &src.real_out_tx_key, src.real_output_in_tx_index));
+        b.extend_from_slice(
+            &input_key_offset(src, keys, account, subaddr_indices)
+                .ok_or(SignError::Parse("input key offset"))?,
+        );
         b.extend_from_slice(&src.mask);
         b.extend_from_slice(&src.amount.to_le_bytes());
         write_varint(src.ring.len() as u64, &mut b);
@@ -102,7 +163,7 @@ mod imp {
             b.extend_from_slice(&m.dest);
             b.extend_from_slice(&m.commitment);
         }
-        b
+        Ok(b)
     }
 
     fn serai_network(n: Network) -> SeraiNetwork {
@@ -127,11 +188,14 @@ mod imp {
             return Err(SignError::Parse("no sources"));
         }
 
+        use crate::monero::txset::{parse_construction_data, parse_dest_entries};
+        let spans = parse_construction_data(&pt).ok_or(SignError::Parse("construction_data"))?;
+
         let net = serai_network(network);
 
         let mut inputs = Vec::with_capacity(sources.len());
         for s in &sources {
-            let bytes = input_bytes(s, &view_secret);
+            let bytes = input_bytes(s, keys, spans.subaddr_account, &spans.subaddr_indices)?;
             let owd = OutputWithDecoys::read(&mut &bytes[..])
                 .map_err(|e| SignError::Serai(format!("input: {e:?}")))?;
             inputs.push(owd);
@@ -140,23 +204,22 @@ mod imp {
         // Payments = the user's recipients, parsed STRUCTURALLY from `dests`
         // (excludes change). Finds external recipients (the old self-pubkey scan
         // only worked for self-sends); honors subaddress recipients.
-        use crate::monero::txset::{parse_construction_data, parse_dest_entries};
         use monero_wallet::address::AddressType;
-        let spans =
-            parse_construction_data(&pt).ok_or(SignError::Parse("construction_data"))?;
+
         let dests = parse_dest_entries(&pt, spans.dests).ok_or(SignError::Parse("dests"))?;
         let mut payments: Vec<(MoneroAddress, u64)> = Vec::new();
         for d in &dests {
+            if d.is_integrated {
+                return Err(SignError::Parse("integrated address destination"));
+            }
             let spend_pt = curve25519_dalek::edwards::CompressedEdwardsY(d.spend_pub)
                 .decompress()
                 .ok_or(SignError::Parse("dest spend point"))?;
             let view_pt = curve25519_dalek::edwards::CompressedEdwardsY(d.view_pub)
                 .decompress()
                 .ok_or(SignError::Parse("dest view point"))?;
-            let kind =
-                if d.is_subaddress { AddressType::Subaddress } else { AddressType::Legacy };
-            let addr =
-                MoneroAddress::new(net, kind, SeraiPoint::from(spend_pt), SeraiPoint::from(view_pt));
+            let kind = if d.is_subaddress { AddressType::Subaddress } else { AddressType::Legacy };
+            let addr = MoneroAddress::new(net, kind, SeraiPoint::from(spend_pt), SeraiPoint::from(view_pt));
             payments.push((addr, d.amount));
         }
         if payments.is_empty() {
@@ -167,8 +230,9 @@ mod imp {
             .decompress()
             .ok_or(SignError::Parse("spend point"))?;
         let view_scalar = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(view_secret);
-        let view_pair = ViewPair::new(SeraiPoint::from(spend_point), Zeroizing::new(SeraiScalar::from(view_scalar)))
-            .map_err(|e| SignError::Serai(format!("view pair: {e:?}")))?;
+        let view_pair =
+            ViewPair::new(SeraiPoint::from(spend_point), Zeroizing::new(SeraiScalar::from(view_scalar)))
+                .map_err(|e| SignError::Serai(format!("view pair: {e:?}")))?;
         let change_out = Change::new(view_pair, None);
 
         let fee_rate = monero_wallet::interface::FeeRate::new(fee_per_weight, 10_000)
@@ -207,11 +271,12 @@ mod imp {
         network: Network,
         fee_per_weight: u64,
     ) -> Result<Vec<u8>, SignError> {
+        use monero_wallet::transaction::{Input, NotPruned, Transaction};
+
         use crate::monero::txset::{
             change_amount, decrypt, encrypt_tx_set, parse_construction_data, parse_dest_entries,
             parse_sources, MAGIC_SIGNED,
         };
-        use monero_wallet::transaction::{Input, NotPruned, Transaction};
 
         let view_secret = keys.view_secret_bytes();
         let view_pub = keys.public_view();
@@ -231,11 +296,9 @@ mod imp {
 
         // Bookkeeping fee = inputs − (recipients + change), recipients from the
         // structural `dests` parse so external sends compute correctly.
-        let total_in: u64 =
-            parse_sources(&pt).map(|s| s.iter().map(|x| x.amount).sum()).unwrap_or(0);
-        let recipients_out: u64 = parse_dest_entries(&pt, sp.dests)
-            .map(|v| v.iter().map(|d| d.amount).sum())
-            .unwrap_or(0);
+        let total_in: u64 = parse_sources(&pt).map(|s| s.iter().map(|x| x.amount).sum()).unwrap_or(0);
+        let recipients_out: u64 =
+            parse_dest_entries(&pt, sp.dests).map(|v| v.iter().map(|d| d.amount).sum()).unwrap_or(0);
         let change_out = change_amount(&pt, &spend_pub);
         let fee = total_in.saturating_sub(recipients_out.saturating_add(change_out));
 
@@ -252,15 +315,15 @@ mod imp {
         plain.extend_from_slice(&[0u8; 32]); // tx_key (null)
         plain.push(0x00); // additional_tx_keys (empty)
         plain.extend_from_slice(cut(sp.dests)); // dests (copy: count + entries)
-        // wallet2 pending_tx order (VERIFIED vs reference fixture in
-        // monero-cold-core/tests/dump_reference): construction_data comes BEFORE
-        // multisig_sigs + multisig_tx_key_entropy, not after.
+                                                // wallet2 pending_tx order (VERIFIED vs reference fixture in
+                                                // monero-cold-core/tests/dump_reference): construction_data comes BEFORE
+                                                // multisig_sigs + multisig_tx_key_entropy, not after.
         plain.extend_from_slice(cut(sp.cdata)); // construction_data (copy)
         plain.push(0x00); // multisig_sigs (empty)
         plain.extend_from_slice(&[0u8; 32]); // multisig_tx_key_entropy (null)
-        // signed_tx_set wrapper: key_images vec MUST be empty (wallet2's holds the
-        // cold wallet's full export; a partial entry fails import — the tx's key
-        // image is already inline) + tx_key_images map (empty).
+                                             // signed_tx_set wrapper: key_images vec MUST be empty (wallet2's holds the
+                                             // cold wallet's full export; a partial entry fails import — the tx's key
+                                             // image is already inline) + tx_key_images map (empty).
         plain.push(0x00); // key_images count = 0
         plain.push(0x00); // tx_key_images map count = 0
 
@@ -302,7 +365,7 @@ mod port_tests {
         assert!(file.starts_with(MAGIC_SIGNED), "output is not a signed_tx_set");
         let body = &file[MAGIC_SIGNED.len() + 1..];
         let iv = &body[..8];
-        let key = cryptonight_noxous::cryptonight_hash_v0(view_secret);
+        let key = crate::monero::txset::chacha_key(view_secret);
         let mut buf = body[8..].to_vec();
         ChaCha20Legacy::new(GenericArray::from_slice(&key), GenericArray::from_slice(iv))
             .apply_keystream(&mut buf);
@@ -317,8 +380,7 @@ mod port_tests {
     fn fixture_keys() -> MoneroKeys {
         use curve25519_dalek::scalar::Scalar;
         let spend_secret = Scalar::from_bytes_mod_order([0x11u8; 32]);
-        let view_secret =
-            Scalar::from_bytes_mod_order(crate::monero::keccak256(spend_secret.as_bytes()));
+        let view_secret = Scalar::from_bytes_mod_order(crate::monero::keccak256(spend_secret.as_bytes()));
         MoneroKeys { spend_secret, view_secret }
     }
 

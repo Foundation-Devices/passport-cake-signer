@@ -1,0 +1,77 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button, ButtonSection, ContentSection, HeadingLg, Input, NavHeader,
+         PageBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { RenameWalletPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component RenameWalletPagePage inherits Rectangle {
+    in property <RenameWalletPageProps> props;
+    property <string> label-edit: Callbacks.wallet-rename-value;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: "Rename wallet";
+                clicked => { Navigate.wallet-detail-page({ }); }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    HeadingLg {
+                        text: "Rename wallet";
+                        horizontal-alignment: center;
+                    }
+
+                    TextMd {
+                        text: "Choose a name that helps you recognize this wallet in Cake signing flows.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    Input {
+                        text <=> label-edit;
+                        placeholder: "Wallet name";
+                        accept-button-text: "Save";
+                        accepted(label) => {
+                            if Callbacks.rename-active-wallet(label) {
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    Button {
+                        label: "Save";
+                        icon: "check";
+                        importance: Importance.primary;
+                        enabled: label-edit != "";
+                        clicked => {
+                            if Callbacks.rename-active-wallet(label-edit) {
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

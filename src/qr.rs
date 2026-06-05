@@ -9,10 +9,10 @@
 //! parses (`unsigned_tx_set`) and produces (`signed_tx_set`). So the crypto is
 //! transport-agnostic; this module is only the wrapper:
 //!
-//!   * encode: raw signed_tx_set -> CBOR(bytes) -> `encode_qr_parts(ur_type,…)`
-//!     -> infinite frame model the Slint `DynamicQrCode` cycles.
-//!   * decode: scanned UR message (the scanner server already reassembled the
-//!     fountain frames) -> CBOR decode -> raw unsigned_tx_set.
+//!   * encode: raw signed_tx_set -> CBOR(bytes) -> `encode_qr_parts(ur_type,…)` -> infinite frame model the
+//!     Slint `DynamicQrCode` cycles.
+//!   * decode: scanned UR message (the scanner server already reassembled the fountain frames) -> CBOR decode
+//!     -> raw unsigned_tx_set.
 //!
 //! UR types (match cake-tech/cupcake `lib/coins/monero/wallet.dart`):
 //!   xmr-txunsigned (Cake -> Prime), xmr-txsigned (Prime -> Cake), xmr-keyimage.
@@ -37,11 +37,16 @@ pub const UR_KEY_IMAGE: &str = "xmr-keyimage";
 
 /// Wrap `blob` as a CBOR bytestring (the UR payload CupCake/Cake expect) and
 /// return the animated UR frame model for `ur_type`. `max_size` is the per-frame
-/// budget requested by the QR display page.
+/// budget the `DynamicQrCode` density selector passes (250 / 500 / 1000).
 pub fn ur_parts(ur_type: &str, blob: &[u8], max_size: i32) -> ModelRc<SharedString> {
     let bytes = minicbor::bytes::ByteVec::from(blob.to_vec());
     let ur_bytes = minicbor::to_vec(bytes).expect("cbor encode of bytestring is infallible");
-    qrcode::encode_qr_parts(ur_type, ur_bytes, max_size)
+    // Emit ONLY the pure (systematic) fragments as a finite, cycling list. The signed
+    // tx set is ~2.5-4 KB, which cannot fit in a single QR (renderer panics with
+    // DataTooLong), so it MUST be multi-part. Pure parts decode deterministically in
+    // Cake's bc-ur — unlike fountain-mixed parts, which the two stacks reassemble
+    // differently and which made scans drag on for minutes (or never converge).
+    qrcode::encode_qr_parts_static(ur_type, ur_bytes, max_size)
 }
 
 /// Unwrap the CBOR bytestring carried by an incoming UR back to the raw blob.

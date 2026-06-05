@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Monero standard (primary) address encoding.
+//! Monero standard/subaddress address encoding.
 //!
 //! Layout:  base58_monero( prefix_varint || pub_spend(32) || pub_view(32) || checksum(4) )
 //! where    checksum = keccak256(prefix || pub_spend || pub_view)[..4].
@@ -19,16 +19,36 @@ const FULL_ENCODED_BLOCK_SIZE: usize = 11;
 // Encoded length for a final partial block of N bytes (index = N).
 const ENCODED_BLOCK_SIZES: [usize; 9] = [0, 2, 3, 5, 6, 7, 9, 10, 11];
 
-/// Build the standard address for the given network + public keys.
-pub fn primary_address(network: Network, pub_spend: &[u8; 32], pub_view: &[u8; 32]) -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressKind {
+    Standard,
+    Subaddress,
+}
+
+/// Build a Monero address for the given network, type, and public keys.
+pub fn address(network: Network, kind: AddressKind, pub_spend: &[u8; 32], pub_view: &[u8; 32]) -> String {
     let mut data = Vec::with_capacity(1 + 32 + 32 + 4);
-    // All standard prefixes are < 128, so the varint is a single byte.
-    data.push(network.standard_prefix());
+    // All Monero standard/subaddress prefixes are < 128, so the varint is a
+    // single byte.
+    data.push(match kind {
+        AddressKind::Standard => network.standard_prefix(),
+        AddressKind::Subaddress => network.subaddress_prefix(),
+    });
     data.extend_from_slice(pub_spend);
     data.extend_from_slice(pub_view);
     let checksum = keccak256(&data);
     data.extend_from_slice(&checksum[..4]);
     base58_encode(&data)
+}
+
+/// Build the standard address for the given network + public keys.
+pub fn primary_address(network: Network, pub_spend: &[u8; 32], pub_view: &[u8; 32]) -> String {
+    address(network, AddressKind::Standard, pub_spend, pub_view)
+}
+
+/// Build the subaddress for the given network + public keys.
+pub fn subaddress_address(network: Network, pub_spend: &[u8; 32], pub_view: &[u8; 32]) -> String {
+    address(network, AddressKind::Subaddress, pub_spend, pub_view)
 }
 
 /// Encode one block (1..=8 bytes) into exactly `ENCODED_BLOCK_SIZES[len]` chars,
@@ -86,6 +106,17 @@ mod tests {
         // Mainnet standard addresses begin with '4' (prefix byte 18).
         let addr = primary_address(Network::Mainnet, &[1u8; 32], &[2u8; 32]);
         assert!(addr.starts_with('4'), "got {addr}");
+    }
+
+    #[test]
+    fn subaddresses_use_subaddress_prefixes() {
+        let main = subaddress_address(Network::Mainnet, &[1u8; 32], &[2u8; 32]);
+        let stage = subaddress_address(Network::Stagenet, &[1u8; 32], &[2u8; 32]);
+        let test = subaddress_address(Network::Testnet, &[1u8; 32], &[2u8; 32]);
+        assert_eq!(main.len(), 95);
+        assert!(main.starts_with('8'), "got {main}");
+        assert!(stage.starts_with('7'), "got {stage}");
+        assert!(test.starts_with('B'), "got {test}");
     }
 
     // Known Monero mainnet base58 vector: the all-purpose block encoder must

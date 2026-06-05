@@ -1,0 +1,94 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button, ButtonSection, ContentSection, HeadingLg, Icon, NavHeader,
+         PageBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { DeleteWalletConfirmPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component DeleteWalletConfirmPagePage inherits Rectangle {
+    in property <DeleteWalletConfirmPageProps> props;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: "Delete wallet";
+                clicked => { Navigate.wallet-detail-page({ }); }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 88px;
+                            height: 88px;
+                            border-radius: Size.sz6;
+                            background: Cake.surface;
+                            Icon {
+                                name: "alert";
+                                size: IconSize.px64;
+                                color: Cake.warning;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    HeadingLg {
+                        text: Callbacks.wallet-derived ? "Remove wallet?" : "Delete permanently?";
+                        horizontal-alignment: center;
+                    }
+
+                    TextMd {
+                        text: Callbacks.wallet-derived ? "This removes the archived wallet from the list. Prime-derived wallets can be recreated later from this Prime; new creation reuses the lowest missing Prime-derived wallet number." : "This removes the archived wallet record and its sealed seed from this app. Make sure you have the seed backed up before deleting it.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    TextSm {
+                        text: Callbacks.wallet-label;
+                        color: Cake.on-surface;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    Button {
+                        label: TR2.lookup(TrId.Cancel);
+                        importance: Importance.normal;
+                        clicked => { Navigate.wallet-detail-page({ }); }
+                    }
+                    Button {
+                        label: Callbacks.wallet-derived ? "Remove wallet" : "Delete permanently";
+                        icon: "delete";
+                        importance: Importance.negative;
+                        clicked => {
+                            if Callbacks.delete-active-wallet() {
+                                Navigate.home-page({ });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

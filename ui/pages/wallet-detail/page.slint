@@ -1,0 +1,181 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button, ButtonSection, ContentSection, HeadingLg, Icon, NavHeader,
+         OverlayMenu, PageBody, Panel, PopupMenuItem, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { WalletDetailPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { TR2, TrId } from "../../gen/tr.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component WalletDetailPagePage inherits Rectangle {
+    in property <WalletDetailPageProps> props;
+    property <bool> is-menu-open: false;
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: Callbacks.wallet-label;
+                right-icon: "ellipsis";
+                clicked => { Navigate.home-page({ }); }
+                right-clicked => { is-menu-open = !is-menu-open; }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 88px;
+                            height: 88px;
+                            border-radius: Size.sz6;
+                            background: Callbacks.wallet-archived ? Cake.surface-alt : (Callbacks.wallet-derived ? Cake.blue : Cake.monero);
+                            Icon {
+                                name: Callbacks.wallet-archived ? "archive" : (Callbacks.wallet-derived ? "device" : "import");
+                                size: IconSize.px64;
+                                color: Callbacks.wallet-archived ? Cake.on-surface-dim : (Callbacks.wallet-derived ? Cake.background : Cake.on-surface);
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    HeadingLg {
+                        text: Callbacks.wallet-label;
+                        horizontal-alignment: center;
+                    }
+
+                    TextMd {
+                        text: Callbacks.wallet-kind;
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    Panel {
+                        background: Cake.surface;
+                        border-radius: Size.sz3;
+                        VerticalLayout {
+                            padding: Size.sz4;
+                            spacing: Size.sz2;
+                            TextSm {
+                                text: "Primary address";
+                                color: Cake.on-surface-dim;
+                            }
+                            TextMd {
+                                text: Callbacks.wallet-address-full;
+                                color: Cake.on-surface;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    if Callbacks.wallet-archived: TextMd {
+                        text: "This wallet is archived. Use the menu to restore or delete it.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    if !Callbacks.wallet-archived: Button {
+                        label: TR2.lookup(TrId.HomePairQr);
+                        icon: "cake";
+                        importance: Importance.normal;
+                        clicked => {
+                            Callbacks.prepare-pair-qr();
+                            Navigate.pair-page({ });
+                        }
+                    }
+                    if !Callbacks.wallet-archived: Button {
+                        label: "Verify address";
+                        icon: "scan-qr";
+                        importance: Importance.normal;
+                        clicked => { Navigate.verify-address-page({ }); }
+                    }
+                    if !Callbacks.wallet-archived: Button {
+                        label: TR2.lookup(TrId.HomeSignTransaction);
+                        icon: "scan-qr";
+                        importance: Importance.primary;
+                        clicked => {
+                            Callbacks.scan-unsigned-tx();
+                            if Callbacks.tx-loaded {
+                                Navigate.review-page({ });
+                            } else if Callbacks.keyimages-ready {
+                                Navigate.keyimage-qr-page({ });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if is-menu-open: OverlayMenu {
+            width: parent.width;
+            height: parent.height;
+            touched-off => { is-menu-open = false; }
+
+            if !Callbacks.wallet-archived: PopupMenuItem {
+                label: "Rename wallet";
+                icon: "edit";
+                first: true;
+                clicked => {
+                    is-menu-open = false;
+                    Navigate.rename-wallet-page({ });
+                }
+            }
+            if !Callbacks.wallet-archived: PopupMenuItem {
+                label: TR2.lookup(TrId.MenuViewSeed);
+                icon: "eye";
+                last: !Callbacks.wallet-can-archive;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.prepare-seed-words();
+                    Navigate.seed-page({ });
+                }
+            }
+            if Callbacks.wallet-can-archive: PopupMenuItem {
+                label: "Archive wallet";
+                icon: "archive";
+                last: true;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.archive-active-wallet();
+                }
+            }
+            if Callbacks.wallet-can-restore: PopupMenuItem {
+                label: "Restore wallet";
+                icon: "archive";
+                first: true;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.restore-active-wallet();
+                }
+            }
+            if Callbacks.wallet-can-delete: PopupMenuItem {
+                label: "Delete permanently";
+                icon: "delete";
+                last: true;
+                clicked => {
+                    is-menu-open = false;
+                    Navigate.delete-wallet-confirm-page({ });
+                }
+            }
+        }
+    }
+}

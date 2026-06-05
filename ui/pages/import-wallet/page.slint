@@ -1,0 +1,161 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Button, ButtonSection, ContentSection, HeadingLg, Icon, Input, NavHeader,
+         PageBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Importance, Size, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { ImportWalletPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { Cake } from "../../cake-theme.slint";
+
+export component ImportWalletPagePage inherits Rectangle {
+    in property <ImportWalletPageProps> props;
+    property <int> step: 0;
+    property <string> seed-text: "";
+    background: Cake.background;
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            NavHeader {
+                title: "Import wallet";
+                clicked => {
+                    if step == 0 {
+                        Navigate.home-page({ });
+                    } else if step == 2 {
+                        step = 1;
+                    } else {
+                        step = 0;
+                    }
+                }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    if step == 0: HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 88px;
+                            height: 88px;
+                            border-radius: Size.sz6;
+                            background: Cake.surface;
+                            Icon {
+                                name: "import";
+                                size: IconSize.px64;
+                                color: Cake.blue;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+
+                    HeadingLg {
+                        text: step == 0 ? "Import wallet" : (step == 1 ? "Choose method" : "Type seed words");
+                        horizontal-alignment: center;
+                    }
+
+                    if step == 0: TextMd {
+                        text: "Bring in a Cake wallet using a seed QR, typed seed words, or a UTF-8 text file.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if step == 0: TextMd {
+                        text: "Supported seeds are 16-word Polyseed and 24/25-word legacy Monero mnemonics.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if step == 1: TextMd {
+                        text: "Choose the format Cake gives you. The imported seed is sealed on this Prime.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if step == 2: Input {
+                        text <=> seed-text;
+                        placeholder: "Seed words";
+                        accept-button-text: "Import";
+                        accepted(seed) => {
+                            if Callbacks.import-seed-text(seed) {
+                                seed-text = "";
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+
+                    if step == 2: TextSm {
+                        text: Callbacks.seed-import-preview(seed-text);
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if Callbacks.status-text != "": TextSm {
+                        text: Callbacks.status-text;
+                        color: Cake.warning;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+
+                ButtonSection {
+                    if step == 0: Button {
+                        label: "Continue";
+                        importance: Importance.primary;
+                        clicked => { step = 1; }
+                    }
+
+                    if step == 1: Button {
+                        label: "Import text file";
+                        icon: "file";
+                        importance: Importance.normal;
+                        clicked => {
+                            if Callbacks.import-seed-file() {
+                                seed-text = "";
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+                    if step == 1: Button {
+                        label: "Type seed words";
+                        icon: "edit";
+                        importance: Importance.normal;
+                        clicked => { step = 2; }
+                    }
+                    if step == 1: Button {
+                        label: "Scan Cake seed QR";
+                        icon: "scan-qr";
+                        importance: Importance.primary;
+                        clicked => {
+                            if Callbacks.import-seed-qr() {
+                                seed-text = "";
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+
+                    if step == 2: Button {
+                        label: "Import typed seed";
+                        icon: "check";
+                        importance: Importance.primary;
+                        enabled: seed-text != "";
+                        clicked => {
+                            if Callbacks.import-seed-text(seed-text) {
+                                seed-text = "";
+                                Navigate.wallet-detail-page({ });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

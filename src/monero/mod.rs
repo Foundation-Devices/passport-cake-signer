@@ -33,6 +33,7 @@ pub mod polyseed;
 pub mod signer;
 pub mod store;
 pub mod txset;
+pub mod wallets;
 
 use serde::{Deserialize, Serialize};
 
@@ -86,9 +87,7 @@ pub enum Network {
 }
 
 impl Default for Network {
-    fn default() -> Self {
-        Network::Stagenet
-    }
+    fn default() -> Self { Network::Stagenet }
 }
 
 impl Network {
@@ -99,6 +98,16 @@ impl Network {
             Network::Mainnet => 18,
             Network::Stagenet => 24,
             Network::Testnet => 53,
+        }
+    }
+
+    /// Address-prefix byte for a SUBADDRESS public address
+    /// (Monero `cryptonote_config.h`): mainnet 42, stagenet 36, testnet 63.
+    pub fn subaddress_prefix(self) -> u8 {
+        match self {
+            Network::Mainnet => 42,
+            Network::Stagenet => 36,
+            Network::Testnet => 63,
         }
     }
 }
@@ -132,8 +141,15 @@ pub struct TxSummary {
     /// in the unsigned set; 0 until the source walk lands (the signer re-derives
     /// it authoritatively).
     pub fee_atomic: u64,
-    /// Destination addresses (base58); includes the change address for now.
+    /// Real recipient destination addresses (base58); change is separate.
     pub destinations: Vec<String>,
+    /// Per-recipient amounts matching `destinations`.
+    pub destination_amounts_atomic: Vec<u64>,
+    /// Cake/wallet2 account the spend is being constructed from.
+    pub subaddr_account: u32,
+    /// Cake/wallet2 minor indices selected for the spend. Prime displays and
+    /// signs against this metadata; Cake still owns account/subaddress creation.
+    pub subaddr_indices: Vec<u32>,
     /// Number of transaction outputs (sends + change).
     pub output_count: usize,
 }
