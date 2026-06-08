@@ -54,7 +54,7 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 # wallet2 unsigned_tx_set decryption needs cn_slow_hash (CryptoNight) for the
 # chacha key. Vendored no_std CryptoNight (parity-tested byte-for-byte vs
 # cuprate-cryptonight) so it builds + runs on xous, not just host/sim.
-cryptonight-noxous = { path = "../../../cryptonight-noxous" }
+cryptonight-noxous = { path = "vendor/cryptonight-noxous" }
 chacha20 = { version = "0.9", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 # RingCT/CLSAG + Bulletproof+ signing (serai / monero-oxide). no_std (alloc);
