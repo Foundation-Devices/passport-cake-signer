@@ -4,7 +4,14 @@ Date: 2026-07-26
 
 Status: hardware-tested proof of concept with implemented QuantumLink transport
 
-Repository: `passport-cake-signer`
+Canonical Prime app repository:
+`https://github.com/Foundation-Devices/passport-cake-signer`
+
+Companion Cake Android fork:
+`https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink`
+
+Cake upstream target:
+`https://github.com/cake-tech/cake_wallet`
 
 KeyOS integration worktree: `KeyOS-cake-signer`
 
@@ -22,6 +29,13 @@ The current architecture intentionally mimics the CupCake/Cake offline signing
 model instead of defining a new Prime-specific Monero protocol. This gives us
 interop with the public Cake build today and lets us prove the hard parts first:
 wallet2 parsing, key-image generation, transaction signing, and Cake broadcast.
+
+The Prime-side KeyOS app and Cake mobile changes are intentionally tracked in
+separate repositories. The Foundation `passport-cake-signer` repository is the
+canonical source for the Passport app. The Cake mobile fork carries only the
+Android-side changes needed to expose Passport Prime as a Cake hardware wallet
+and route Monero watch restore, key-image sync, and transaction signing over
+QuantumLink.
 
 One real hardware transaction has been signed on Passport Prime, scanned back
 into Cake Wallet, and broadcast successfully.

@@ -33,7 +33,10 @@ Natural next steps: build a real Cake fixture suite, stress test larger wallet
 states on hardware, harden QuantumLink/USB transport, and run a focused security
 review.
 
-Private repo: https://github.com/Foundation-Devices/passport-cake-signer
+Private Prime app repo: https://github.com/Foundation-Devices/passport-cake-signer
+
+Companion Cake Android fork:
+https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink
 
 The accompanying technical spec in the repo has the full protocol, wallet model,
 signing flow, limitations, and proposed next steps.

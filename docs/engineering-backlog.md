@@ -47,9 +47,17 @@ Manual hardware checks still required:
 
 ## Known External Boundary
 
-Cake mobile is not part of this source repo. QuantumLink work requires the Cake
-mobile fork plus the KeyOS QuantumLink server path. For upstreamability, Cake-side
-changes should remain limited to:
+Cake mobile is not part of this source repo.
+
+- Canonical Prime app source:
+  <https://github.com/Foundation-Devices/passport-cake-signer>
+- Companion Cake Android fork:
+  <https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink>
+- Cake upstream target:
+  <https://github.com/cake-tech/cake_wallet>
+
+QuantumLink work requires the Cake mobile fork plus the KeyOS QuantumLink server
+path. For upstreamability, Cake-side changes should remain limited to:
 
 - A Passport Prime hardware-wallet entry beside existing hardware integrations.
 - A QuantumLink transport adapter.

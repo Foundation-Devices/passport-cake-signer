@@ -14,6 +14,28 @@ Passport Prime, scanned back into Cake Wallet, and sent successfully.
 This repo is the app source snapshot. Build and hardware validation happen after
 syncing into the KeyOS integration worktree.
 
+## Repository Map
+
+This repository is the canonical Prime-side app source:
+
+- Prime signer app: <https://github.com/Foundation-Devices/passport-cake-signer>
+- Companion Cake Android fork:
+  <https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink>
+- Cake upstream target: <https://github.com/cake-tech/cake_wallet>
+
+The Prime app repository contains the KeyOS app that runs on Passport Prime. The
+Cake Android fork contains the mobile-side Passport Prime / QuantumLink changes
+that connect Cake to this app. They are intentionally separate repositories
+because one is a KeyOS app and the other is a fork of Cake Wallet intended for a
+future upstream PR.
+
+The local `KeyOS-cake-signer` checkout is only an integration/build/flash
+workspace. It is not the canonical project repository and should not be pushed
+unless explicitly approved.
+
+The previous personal mirror, `BitcoinQnA/passport-cake-signer`, is archived and
+marked as continued here.
+
 ## Current Capabilities
 
 | Capability | Status |
