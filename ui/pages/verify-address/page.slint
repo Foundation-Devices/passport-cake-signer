@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Button, ButtonSection, ContentSection, HeadingLg, Input, NavHeader,
-         PageBody, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
+import { ButtonSection, ContentSection, HeadingLg, Input, NavHeader,
+         PageBody, Qrcode, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { CakeButton, CakeCard, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { VerifyAddressPageProps } from "./props.slint";
@@ -44,83 +44,103 @@ export component VerifyAddressPagePage inherits Rectangle {
             }
 
             PageBody {
-                ContentSection {
-                    spacing: Size.sz4;
+                p-y: Size.sz3;
 
-                    HeadingLg {
-                        text: "Check a Cake address";
-                        horizontal-alignment: center;
-                    }
+                Rectangle {
+                    height: 440px;
+                    clip: true;
 
-                    TextMd {
-                        text: "Scan a Cake address QR to confirm it belongs to this Prime wallet, or derive a known account/subaddress pair.";
-                        color: Cake.on-surface-dim;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
+                    Flickable {
+                        width: parent.width;
+                        height: parent.height;
 
-                    HorizontalLayout {
-                        spacing: Size.sz2;
-                        Input {
-                            text <=> account;
-                            placeholder: "Account";
-                            input-type: InputType.number;
-                            show-clear-btn: false;
-                        }
-                        Input {
-                            text <=> subaddress;
-                            placeholder: "Subaddress";
-                            input-type: InputType.number;
-                            show-clear-btn: false;
-                        }
-                    }
-
-                    if Callbacks.verify-ready: Panel {
-                        background: Cake.surface;
-                        border-radius: Size.sz3;
-                        VerticalLayout {
-                            padding: Size.sz4;
+                        ContentSection {
+                            width: parent.width;
                             spacing: Size.sz3;
-                            TextLg {
-                                text: Callbacks.verify-title;
-                                color: Callbacks.verify-matched ? Cake.success : Cake.warning;
-                                bold: true;
+
+                            HeadingLg {
+                                text: "Check a Cake address";
                                 horizontal-alignment: center;
-                                wrap: word-wrap;
                             }
-                            TextSm {
-                                text: Callbacks.verify-detail;
+
+                            if !Callbacks.verify-ready: TextMd {
+                                text: "Scan a Cake address QR to confirm it belongs to this Prime wallet, or derive a known account/subaddress pair.";
                                 color: Cake.on-surface-dim;
                                 horizontal-alignment: center;
                                 wrap: word-wrap;
                             }
-                            TextSm {
-                                text: Callbacks.verify-address;
-                                color: Cake.on-surface;
-                                horizontal-alignment: center;
-                                wrap: word-wrap;
-                            }
-                            if Callbacks.verify-address != "": HorizontalLayout {
-                                alignment: center;
-                                Qrcode {
-                                    data: Callbacks.verify-address;
-                                    width: 180px;
-                                    height: 180px;
+
+                            CakeCard {
+                                VerticalLayout {
+                                    padding: Size.sz4;
+                                    spacing: Size.sz3;
+                                    TextSm {
+                                        text: "Derive by index";
+                                        color: Cake.on-surface-dim;
+                                        horizontal-alignment: center;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: Size.sz2;
+                                        Input {
+                                            text <=> account;
+                                            placeholder: "Account";
+                                            input-type: InputType.number;
+                                            show-clear-btn: false;
+                                        }
+                                        Input {
+                                            text <=> subaddress;
+                                            placeholder: "Subaddress";
+                                            input-type: InputType.number;
+                                            show-clear-btn: false;
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
 
-                    if Callbacks.status-text != "": TextSm {
-                        text: Callbacks.status-text;
-                        color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+                            if Callbacks.verify-ready: CakeCard {
+                                VerticalLayout {
+                                    padding: Size.sz4;
+                                    spacing: Size.sz3;
+                                    TextLg {
+                                        text: Callbacks.verify-title;
+                                        color: Callbacks.verify-matched ? Cake.success : Cake.warning;
+                                        bold: true;
+                                        horizontal-alignment: center;
+                                        wrap: word-wrap;
+                                    }
+                                    TextSm {
+                                        text: Callbacks.verify-detail;
+                                        color: Cake.on-surface-dim;
+                                        horizontal-alignment: center;
+                                        wrap: word-wrap;
+                                    }
+                                    TextSm {
+                                        text: Callbacks.verify-address;
+                                        color: Cake.on-surface;
+                                        horizontal-alignment: center;
+                                        wrap: word-wrap;
+                                    }
+                                    if Callbacks.verify-address != "": HorizontalLayout {
+                                        alignment: center;
+                                        Qrcode {
+                                            data: Callbacks.verify-address;
+                                            width: 148px;
+                                            height: 148px;
+                                        }
+                                    }
+                                }
+                            }
+
+                            CakeStatusBanner {
+                                text: Callbacks.status-text;
+                                danger: !Callbacks.verify-matched;
+                            }
+                        }
                     }
                 }
 
                 ButtonSection {
-                    CakeButton {
+                    if !Callbacks.verify-ready || Callbacks.verify-title != "Derived address": CakeButton {
                         label: "Show derived address";
                         icon: "eye";
                         importance: Importance.normal;

@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Button, ButtonSection, ContentSection, Icon, NavHeader,
+import { ButtonSection, ContentSection, Icon, NavHeader,
          OverlayMenu, PageBody, PopupMenuItem, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
+import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { WalletDetailPageProps } from "./props.slint";
@@ -110,11 +110,9 @@ export component WalletDetailPagePage inherits Rectangle {
                         wrap: word-wrap;
                     }
 
-                    if Callbacks.status-text != "": TextSm {
+                    CakeStatusBanner {
                         text: Callbacks.status-text;
-                        color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+                        danger: false;
                     }
                 }
 

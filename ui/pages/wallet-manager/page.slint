@@ -1,67 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Icon, NavHeader, ScrollBody, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { Size, IconSize } from "@ui/theme.slint";
-import { Callbacks, WalletRow } from "../../callbacks.slint";
+import { NavHeader, ScrollBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { Size } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
 import { WalletManagerPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { Cake } from "../../cake-theme.slint";
-
-component ArchivedWalletItem inherits Rectangle {
-    in property <WalletRow> wallet;
-    callback clicked;
-
-    height: 78px;
-    background: Cake.surface-alt;
-    border-radius: Size.sz3;
-    opacity: 0.72;
-    clip: true;
-
-    HorizontalLayout {
-        padding-left: Size.sz4;
-        padding-right: Size.sz4;
-        spacing: Size.sz3;
-
-        VerticalLayout {
-            width: Size.sz11;
-            alignment: center;
-            Rectangle {
-                width: Size.sz11;
-                height: Size.sz11;
-                border-radius: Size.sz6;
-                background: Cake.surface;
-                Icon {
-                    name: "archive";
-                    size: IconSize.px32;
-                    color: Cake.on-surface-dim;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            TextLg {
-                text: wallet.name;
-                color: Cake.on-surface;
-                bold: true;
-                overflow: elide;
-            }
-        }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-
-    states [
-        pressed when touch.pressed: {
-            root.opacity: 0.82;
-        }
-    ]
-}
+import { CakeListTile } from "../../cake-widgets.slint";
 
 export component WalletManagerPagePage inherits Rectangle {
     in property <WalletManagerPageProps> props;
@@ -97,20 +43,16 @@ export component WalletManagerPagePage inherits Rectangle {
                         wrap: word-wrap;
                     }
 
-                    for wallet in Callbacks.archived-wallets: ArchivedWalletItem {
-                        wallet: wallet;
+                    for wallet in Callbacks.archived-wallets: CakeListTile {
+                        title: wallet.name;
+                        subtitle: "";
+                        icon: "archive";
+                        archived: true;
                         clicked => {
                             if Callbacks.select-wallet(wallet.id) {
                                 Navigate.wallet-detail-page({ });
                             }
                         }
-                    }
-
-                    if Callbacks.status-text != "": TextSm {
-                        text: Callbacks.status-text;
-                        color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
                     }
                 }
             }

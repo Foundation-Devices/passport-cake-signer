@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Icon, TextLg, TimerLoader } from "@ui/widgets.slint";
-import { Importance, Size } from "@ui/theme.slint";
+import { Icon, TextLg, TextMd, TextSm, TimerLoader } from "@ui/widgets.slint";
+import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Cake } from "cake-theme.slint";
 
 export component CakeButton inherits Rectangle {
@@ -25,12 +25,12 @@ export component CakeButton inherits Rectangle {
     private property <bool> pressed: touch.pressed || force-pressed;
     private property <bool> primary: importance == Importance.primary;
     private property <bool> negative: importance == Importance.negative;
-    private property <brush> bg-color: !enabled ? Cake.surface-alt
-        : negative ? Cake.danger
+    private property <brush> bg-color: !enabled ? Cake.surface-low
+        : negative ? Cake.danger-bg
         : primary ? (pressed ? Cake.blue-dim : Cake.blue)
-        : (pressed ? Cake.surface-alt : Cake.surface);
+        : (pressed ? Cake.surface-card-pressed : Cake.surface-card);
     private property <brush> content-color: !enabled ? Cake.on-surface-dim
-        : negative ? #FFFFFF
+        : negative ? Cake.danger
         : primary ? Cake.on-blue
         : Cake.on-surface;
 
@@ -72,6 +72,259 @@ export component CakeButton inherits Rectangle {
         clicked => {
             if (enabled) {
                 root.clicked(id);
+            }
+        }
+    }
+}
+
+export component CakeCard inherits Rectangle {
+    in property <bool> pressed: false;
+    in property <bool> archived: false;
+
+    background: archived ? Cake.surface-low : (pressed ? Cake.surface-card-pressed : Cake.surface-card);
+    border-radius: Size.sz3;
+    border-width: 1px;
+    border-color: Cake.divider;
+    clip: true;
+}
+
+export component CakeIconChip inherits Rectangle {
+    in property <string> icon;
+    in property <brush> chip-color: Cake.surface-high;
+    in property <brush> icon-color: Cake.on-surface;
+    in property <length> chip-size: Size.sz11;
+    in property <length> icon-size: IconSize.px32;
+
+    width: chip-size;
+    height: chip-size;
+    border-radius: chip-size / 2;
+    background: chip-color;
+
+    Icon {
+        name: icon;
+        size: icon-size;
+        color: icon-color;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+
+export component CakeListTile inherits CakeCard {
+    in property <string> title;
+    in property <string> subtitle: "";
+    in property <string> icon;
+    in property <brush> chip-color: Cake.blue;
+    in property <brush> icon-color: Cake.on-blue;
+    in property <bool> show-chevron: true;
+    callback clicked;
+
+    height: subtitle == "" ? 78px : 92px;
+    pressed: touch.pressed;
+    opacity: root.archived ? 0.68 : 1;
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        spacing: Size.sz3;
+
+        VerticalLayout {
+            width: Size.sz11;
+            alignment: center;
+            CakeIconChip {
+                icon: root.icon;
+                chip-color: root.archived ? Cake.surface-alt : root.chip-color;
+                icon-color: root.archived ? Cake.on-surface-dim : root.icon-color;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: Size.sz1;
+
+            TextLg {
+                text: title;
+                color: Cake.on-surface-strong;
+                bold: true;
+                overflow: elide;
+            }
+
+            if subtitle != "": TextSm {
+                text: subtitle;
+                color: Cake.on-surface-dim;
+                overflow: elide;
+            }
+        }
+
+        if show-chevron: VerticalLayout {
+            width: Size.sz6;
+            alignment: center;
+            Icon {
+                name: "chevron-right";
+                color: Cake.on-surface-soft;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CakeMethodCard inherits CakeListTile {
+    in property <bool> primary: false;
+
+    height: 96px;
+    chip-color: primary ? Cake.blue : Cake.surface-high;
+    icon-color: primary ? Cake.on-blue : Cake.blue-soft;
+}
+
+export component CakeStatusBanner inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger: false;
+
+    visible: text != "";
+    min-height: Size.sz15;
+    border-radius: Size.sz4;
+    background: danger ? Cake.danger-bg : Cake.warning-bg;
+    border-width: 1px;
+    border-color: danger ? Cake.danger : Cake.warning;
+
+    HorizontalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        spacing: Size.sz3;
+
+        VerticalLayout {
+            width: Size.sz6;
+            alignment: center;
+            Icon {
+                name: "alert";
+                color: danger ? Cake.danger : Cake.warning;
+                size: IconSize.px24;
+            }
+        }
+
+        TextSm {
+            text: root.text;
+            color: danger ? Cake.danger : Cake.warning;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component CakeQrFrame inherits Rectangle {
+    width: 368px;
+    height: 368px;
+    border-radius: Size.sz6;
+    background: #F8FAFFFF;
+    border-width: 1px;
+    border-color: #BACBFFFF;
+    clip: true;
+
+    Rectangle {
+        x: Size.sz2;
+        y: Size.sz2;
+        width: parent.width - Size.sz4;
+        height: parent.height - Size.sz4;
+        background: #FFFFFFFF;
+        border-radius: Size.sz4;
+        clip: true;
+
+        @children
+    }
+}
+
+export component CakeSlideToSign inherits Rectangle {
+    in property <bool> signing: false;
+    callback activated;
+
+    border-radius: Size.sz6;
+    height: Size.sz16 + (Size.sz1 * 2);
+    background: Cake.surface-card;
+    border-width: 1px;
+    border-color: Cake.divider;
+    clip: true;
+
+    private property <length> inner-width: self.width - Size.sz1 * 2;
+    private property <length> inner-height: self.height - Size.sz1 * 2;
+    private property <length> thumb-width: 124px;
+    private property <length> max-slide-offset: max(Size.zero, inner-width - thumb-width);
+    private property <length> drag-offset: touch.pressed ? touch.mouse-x - touch.pressed-x : 0px;
+    private property <length> slide-offset: signing ? max-slide-offset : min(max-slide-offset, max(Size.zero, drag-offset));
+    private property <bool> has-activated: false;
+
+    changed signing => {
+        if (!signing) {
+            has-activated = false;
+        }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: Size.sz2;
+
+        if signing: TimerLoader {
+            loader-color: Cake.monero;
+            active-color: Cake.on-surface;
+        }
+
+        TextMd {
+            text: signing ? "Signing" : "Slide to sign";
+            color: signing ? Cake.monero : Cake.on-surface-dim;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        x: parent.width - self.width - Size.sz1;
+        y: Size.sz1;
+        width: thumb-width;
+        height: inner-height;
+        border-radius: Size.sz6;
+        background: Cake.surface-low;
+        opacity: signing ? 0 : 1;
+    }
+
+    Rectangle {
+        x: Size.sz1 + slide-offset;
+        y: Size.sz1;
+        width: thumb-width;
+        height: inner-height;
+        border-radius: Size.sz6;
+        background: Cake.monero-card;
+        opacity: signing ? 0 : 1;
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: Size.sz2;
+            padding-left: Size.sz3;
+            padding-right: Size.sz3;
+
+            Icon {
+                name: "arrow-right";
+                color: Cake.on-monero;
+                size: IconSize.px24;
+            }
+
+            TextMd {
+                text: "Sign";
+                color: Cake.on-monero;
+                bold: true;
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        moved() => {
+            if (!root.signing && !root.has-activated && root.slide-offset >= root.max-slide-offset) {
+                root.has-activated = true;
+                root.activated();
             }
         }
     }

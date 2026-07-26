@@ -11,8 +11,10 @@ license = "GPL-3.0-or-later"
 [dependencies]
 # KeyOS plumbing (same set the Liana signer / Bitcoin app pull from the workspace).
 fs = { workspace = true }
+foundation-ur = { workspace = true }
 log = { workspace = true }
 log-server = { workspace = true }
+quantum-link = { workspace = true }
 security = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

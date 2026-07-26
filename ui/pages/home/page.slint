@@ -1,75 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { HeadingLg, Icon, IconButton, OverlayMenu, PopupMenuItem,
-         ScrollBody, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { Importance, Size, IconSize } from "@ui/theme.slint";
-import { Callbacks, WalletRow } from "../../callbacks.slint";
+import { HeadingLg, IconButton, OverlayMenu, PopupMenuItem,
+         ScrollBody, TextMd, BasePage } from "@ui/widgets.slint";
+import { Importance, Size } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
 import { HomePageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { Cake } from "../../cake-theme.slint";
-
-component WalletCard inherits Rectangle {
-    in property <WalletRow> wallet;
-    callback clicked;
-
-    height: 78px;
-    background: Cake.surface;
-    border-radius: Size.sz3;
-    clip: true;
-
-    HorizontalLayout {
-        padding-left: Size.sz4;
-        padding-right: Size.sz4;
-        spacing: Size.sz3;
-
-        VerticalLayout {
-            width: Size.sz11;
-            alignment: center;
-            Rectangle {
-                width: Size.sz11;
-                height: Size.sz11;
-                border-radius: Size.sz6;
-                background: wallet.archived ? Cake.surface-alt : (wallet.derived ? Cake.blue : Cake.monero);
-                Icon {
-                    name: wallet.archived ? "archive" : (wallet.derived ? "device" : "import");
-                    size: IconSize.px32;
-                    color: wallet.archived ? Cake.on-surface-dim : (wallet.derived ? Cake.background : Cake.on-surface);
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            TextLg {
-                text: wallet.name;
-                color: Cake.on-surface;
-                bold: true;
-                overflow: elide;
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            Icon {
-                name: "chevron-right";
-                color: Cake.on-surface-dim;
-            }
-        }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-
-    states [
-        pressed when touch.pressed: {
-            root.background: Cake.surface-alt;
-        }
-    ]
-}
+import { CakeListTile } from "../../cake-widgets.slint";
 
 component CakeLogoMark inherits Rectangle {
     in property <length> mark-size: 118px;
@@ -154,15 +93,13 @@ export component HomePagePage inherits Rectangle {
                         }
                     }
 
-                    if Callbacks.status-text != "": TextSm {
-                        text: Callbacks.status-text;
-                        color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
-
-                    for wallet in Callbacks.wallets: WalletCard {
-                        wallet: wallet;
+                    for wallet in Callbacks.wallets: CakeListTile {
+                        title: wallet.name;
+                        subtitle: "";
+                        icon: wallet.archived ? "archive" : (wallet.derived ? "device" : "import");
+                        archived: wallet.archived;
+                        chip-color: wallet.archived ? Cake.surface-alt : (wallet.derived ? Cake.surface-high : Cake.monero);
+                        icon-color: wallet.archived ? Cake.on-surface-dim : (wallet.derived ? Cake.blue-soft : Cake.on-monero);
                         clicked => {
                             if Callbacks.select-wallet(wallet.id) {
                                 Navigate.wallet-detail-page({ });

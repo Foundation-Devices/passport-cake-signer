@@ -1,32 +1,45 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Cake Wallet inspired dark palette, tuned toward Cake's navy shell, soft blue
-// controls, and Monero-orange account card while staying coherent with KeyOS.
+// Cake Wallet dark palette, adapted for the Prime screen.
 export global Cake {
     // Cake brand blue (primary CTA / accents) and variants.
-    out property <brush> blue: #91AAFF;          // Cake dark CTA blue from the mobile app
-    out property <brush> blue-dim: #7F98EA;       // pressed / muted CTA
-    out property <brush> blue-deep: #19274D;      // deep accent
+    out property <brush> blue: #91B0FF;
+    out property <brush> blue-dim: #7F98EA;
+    out property <brush> blue-soft: #A1B9FF;
+    out property <brush> blue-deep: #1A3C6C;
 
     // Monero accent (this is a Monero wallet app).
-    out property <brush> monero: #F35A24;         // Monero orange card/accent
-    out property <brush> monero-card: #F35A24;    // Monero card surface
+    out property <brush> monero: #FF6600;
+    out property <brush> monero-deep: #F35A24;
+    out property <brush> monero-card: @linear-gradient(180deg, #FF6600 0%, #F35A24 100%);
 
     // Surfaces (Cake dark theme).
-    out property <brush> background: #17213C;      // app shell navy
-    out property <brush> surface: #243258;         // primary card
-    out property <brush> surface-alt: #2C3B68;     // raised card
-    out property <brush> divider: #384A78;         // divider
+    out property <brush> background: #1B284A;
+    out property <brush> background-deep: #0F1A36;
+    out property <brush> surface-lowest: #171C30;
+    out property <brush> surface-low: #2D385C;
+    out property <brush> surface: #24335B;
+    out property <brush> surface-alt: #2A3E73;
+    out property <brush> surface-high: #334C8C;
+    out property <brush> surface-card: @linear-gradient(180deg, #2B3A67 0%, #1C2A4F 100%);
+    out property <brush> surface-card-pressed: @linear-gradient(180deg, #334C8C 0%, #24335B 100%);
+    out property <brush> divider: #2A3E73;
 
     // Status.
-    out property <brush> success: #58F332;         // brightGreen — signed / done
-    out property <brush> warning: #F3A632;         // orangeYellow — caution
-    out property <brush> danger:  #C30000;         // red — error / reject
+    out property <brush> success: #12A439;
+    out property <brush> warning: #FFB84E;
+    out property <brush> warning-bg: #4B3351;
+    out property <brush> danger: #FFB4AB;
+    out property <brush> danger-bg: #4D2447;
 
     // Content.
-    out property <brush> on-blue: #17213C;         // text on the blue fill
-    out property <brush> on-surface: #EFF3FF;
-    out property <brush> on-surface-dim: #A9B5E8;  // muted label text
+    out property <brush> on-blue: #002860;
+    out property <brush> on-surface: #D7E2F7;
+    out property <brush> on-surface-strong: #F4F7FF;
+    out property <brush> on-surface-dim: #8C9FBB;
+    out property <brush> on-surface-soft: #BACBFF;
     out property <brush> on-monero: #1A1A1A;
+    out property <brush> white-soft: #FFFFFF66;
+    out property <brush> overlay: #0F1A36E6;
 }

@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, DynamicQrCode } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
-import { Palette, Size, Importance } from "@ui/theme.slint";
+import { ButtonSection, ContentSection, NavHeader, TextMd, BasePage, PageBody, DynamicQrCode } from "@ui/widgets.slint";
+import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
+import { Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SignedQrPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -43,11 +43,9 @@ export component SignedQrPagePage inherits Rectangle {
                             }
                         }
                     }
-                    if Callbacks.status-text != "": TextMd {
+                    CakeStatusBanner {
                         text: Callbacks.status-text;
-                        color: Cake.on-surface-dim;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+                        danger: false;
                     }
                 }
                 ButtonSection {

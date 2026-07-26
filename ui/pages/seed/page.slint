@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, HeadingMd, Panel, QrCodeCard, TextLg, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
+import { ButtonSection, ContentSection, NavHeader, HeadingMd, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
+import { CakeButton, CakeQrFrame, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SeedPageProps } from "./props.slint";
@@ -15,10 +15,12 @@ component SeedWordItem inherits Rectangle {
     in property <string> word;
     in property <bool> compact: false;
 
-    height: compact ? 36px : 52px;
-    width: 222px;
-    background: Cake.surface;
+    height: compact ? 32px : 52px;
+    width: 216px;
+    background: Cake.surface-card;
     border-radius: Size.sz3;
+    border-width: 1px;
+    border-color: Cake.divider;
 
     HorizontalLayout {
         padding-left: Size.sz3;
@@ -32,7 +34,14 @@ component SeedWordItem inherits Rectangle {
             vertical-alignment: center;
         }
 
-        TextLg {
+        if compact: TextMd {
+            text: word;
+            color: Cake.on-surface;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+
+        if !compact: TextLg {
             text: word;
             color: Cake.on-surface;
             overflow: elide;
@@ -66,48 +75,59 @@ export component SeedPagePage inherits Rectangle {
             }
             PageBody {
                 p-x: Size.sz2;
-                p-y: Size.sz4;
-                ContentSection {
-                    spacing: Size.sz3;
-                    TextSm {
-                        text: TR2.lookup(TrId.SeedWarning);
-                        color: Cake.warning;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
-                    TextSm {
-                        text: "Showing seed for " + Callbacks.wallet-label;
-                        color: Cake.on-surface-dim;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: Size.sz2;
+                p-y: Size.sz3;
 
-                        for row in 13: HorizontalLayout {
-                            alignment: center;
+                Rectangle {
+                    height: 548px;
+                    clip: true;
+
+                    Flickable {
+                        width: parent.width;
+                        height: parent.height;
+
+                        ContentSection {
+                            width: parent.width;
                             spacing: Size.sz2;
-                            visible: row < (Callbacks.seed-words.length <= 16 ? 8 : 13);
+                            CakeStatusBanner {
+                                text: TR2.lookup(TrId.SeedWarning);
+                                danger: false;
+                            }
+                            TextSm {
+                                text: "Showing seed for " + Callbacks.wallet-label;
+                                color: Cake.on-surface-dim;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Size.sz1;
 
-                            for col in 2: SeedWordItem {
-                                property <int> row-count: Callbacks.seed-words.length <= 16 ? 8 : 13;
-                                property <int> word-index: row + col * row-count;
-                                visible: word-index < Callbacks.seed-words.length;
-                                index: word-index;
-                                word: word-index < Callbacks.seed-words.length ? Callbacks.seed-words[word-index] : "";
-                                compact: Callbacks.seed-words.length > 16;
+                                for row in 13: HorizontalLayout {
+                                    alignment: center;
+                                    spacing: Size.sz1;
+                                    visible: row < (Callbacks.seed-words.length <= 16 ? 8 : 13);
+
+                                    for col in 2: SeedWordItem {
+                                        property <int> row-count: Callbacks.seed-words.length <= 16 ? 8 : 13;
+                                        property <int> word-index: row + col * row-count;
+                                        visible: word-index < Callbacks.seed-words.length;
+                                        index: word-index;
+                                        word: word-index < Callbacks.seed-words.length ? Callbacks.seed-words[word-index] : "";
+                                        compact: Callbacks.seed-words.length > 16;
+                                    }
+                                }
+                            }
+
+                            TextSm {
+                                text: TR2.lookup(TrId.SeedSubtitle);
+                                color: Cake.on-surface-dim;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
                             }
                         }
                     }
-
-                    TextSm {
-                        text: TR2.lookup(TrId.SeedSubtitle);
-                        color: Cake.on-surface-dim;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
-                    }
                 }
+
                 ButtonSection {
                     CakeButton {
                         label: TR2.lookup(TrId.Done);
@@ -158,8 +178,14 @@ export component SeedPagePage inherits Rectangle {
 
                     HorizontalLayout {
                         alignment: center;
-                        QrCodeCard {
-                            data: Callbacks.seed-qr-text;
+                        CakeQrFrame {
+                            width: 292px;
+                            height: 292px;
+                            Qrcode {
+                                data: Callbacks.seed-qr-text;
+                                width: parent.width;
+                                height: parent.height;
+                            }
                         }
                     }
 

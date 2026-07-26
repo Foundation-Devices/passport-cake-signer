@@ -24,7 +24,7 @@
 use serde::Serialize;
 use slint_keyos_platform::{
     qrcode,
-    slint::{ModelRc, SharedString},
+    slint::{Model, ModelRc, SharedString},
 };
 
 /// UR type for the signed tx we hand back to Cake.
@@ -80,15 +80,54 @@ pub fn ur_payload_limited(data: &[u8], max_len: usize) -> Result<Vec<u8>, &'stat
     Ok(payload)
 }
 
+pub fn ur_text_payload_limited(
+    text: &str,
+    expected_type: &str,
+    max_len: usize,
+) -> Result<Vec<u8>, &'static str> {
+    if text.len() > max_len.saturating_mul(4).saturating_add(4096) {
+        return Err("UR payload is too large.");
+    }
+
+    let mut decoder = foundation_ur::Decoder::default();
+    let mut saw_frame = false;
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let lower = line.to_ascii_lowercase();
+        let ur = foundation_ur::UR::parse(&lower).map_err(|_| "Could not read Monero UR frames.")?;
+        decoder.receive(ur).map_err(|_| "Could not assemble Monero UR frames.")?;
+        saw_frame = true;
+        if let Some(ur_type) = decoder.ur_type() {
+            if ur_type != expected_type {
+                return Err("Unexpected Monero UR type.");
+            }
+        }
+        if decoder.is_complete() {
+            break;
+        }
+    }
+
+    if !saw_frame {
+        return Err("No Monero UR frames found.");
+    }
+    if !decoder.is_complete() {
+        return Err("Monero UR frames are incomplete.");
+    }
+    if decoder.ur_type() != Some(expected_type) {
+        return Err("Unexpected Monero UR type.");
+    }
+
+    let data = decoder.message().ok().flatten().ok_or("Monero UR frames are incomplete.")?;
+    ur_payload_limited(data, max_len)
+}
+
+pub fn ur_string(ur_type: &str, blob: &[u8], max_size: i32) -> String {
+    ur_parts(ur_type, blob, max_size).iter().map(|part| part.to_string()).collect::<Vec<_>>().join("\n")
+}
+
 /// Build the CupCake pairing JSON (`pairQrString`): the watch-only credentials
 /// Cake restores from. `restore_height` of 0 means Cake rescans from genesis —
 /// safe but slow; a real birthday height can be threaded in later.
-pub fn pair_json(
-    label: &str,
-    primary_address: &str,
-    private_view_key: &str,
-    restore_height: u64,
-) -> String {
+pub fn pair_json(label: &str, primary_address: &str, private_view_key: &str, restore_height: u64) -> String {
     #[derive(Serialize)]
     struct PairPayload<'a> {
         label: &'a str,
@@ -113,8 +152,9 @@ pub fn pair_json(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use slint_keyos_platform::slint::Model;
+
+    use super::*;
 
     #[test]
     fn pair_json_escapes_labels() {

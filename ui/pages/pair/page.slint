@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, Button, TextMd, BasePage, PageBody, QrCodeCard } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
-import { Palette, Size, Importance } from "@ui/theme.slint";
+import { ButtonSection, ContentSection, NavHeader, TextMd, BasePage, PageBody, Qrcode } from "@ui/widgets.slint";
+import { CakeButton, CakeQrFrame } from "../../cake-widgets.slint";
+import { Size, Importance } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { PairPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -39,8 +39,12 @@ export component PairPagePage inherits Rectangle {
                     }
                     HorizontalLayout {
                         alignment: center;
-                        QrCodeCard {
-                            data: Callbacks.pair-json;
+                        CakeQrFrame {
+                            Qrcode {
+                                data: Callbacks.pair-json;
+                                width: parent.width;
+                                height: parent.height;
+                            }
                         }
                     }
                 }

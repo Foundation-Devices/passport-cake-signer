@@ -33,3 +33,12 @@ template = ["gui-app", "fs-generic"]
     "GetUsbReadAccess",
     "GetUsbWriteAccess",
 ]
+"os/quantum-link" = [
+    "SubscribeMoneroWatchCredentialsRequest",
+    "SubscribeMoneroKeyImageSyncRequest",
+    "SubscribeMoneroSignTransactionRequest",
+    "PublishMoneroWatchCredentials",
+    "PublishMoneroKeyImages",
+    "PublishMoneroSignedTransaction",
+    "RejectWdkRequest",
+]
