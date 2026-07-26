@@ -86,13 +86,6 @@ export component HomePagePage inherits Rectangle {
                         wrap: word-wrap;
                     }
 
-                    if Callbacks.wallet-count == 2: HorizontalLayout {
-                        alignment: center;
-                        CakeLogoMark {
-                            mark-size: 72px;
-                        }
-                    }
-
                     for wallet in Callbacks.wallets: CakeListTile {
                         title: wallet.name;
                         subtitle: "";

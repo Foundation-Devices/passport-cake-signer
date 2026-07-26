@@ -82,17 +82,12 @@ impl std::error::Error for Error {}
 
 /// Monero network selector. Start the POC on stagenet (free coins, mirrors
 /// mainnet rules) exactly as the Liana signer starts on signet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Network {
     Mainnet,
+    #[default]
     Stagenet,
     Testnet,
-}
-
-impl Default for Network {
-    fn default() -> Self {
-        Network::Stagenet
-    }
 }
 
 impl Network {

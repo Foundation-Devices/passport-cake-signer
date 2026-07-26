@@ -507,7 +507,7 @@ fn seal_phrase(app_seed: &[u8; 32], id: &str, phrase: &str) -> Result<SealedPhra
     nonce_material.zeroize();
     h1.zeroize();
     h2.zeroize();
-    let nonce_text = STANDARD_NO_PAD.encode(&nonce);
+    let nonce_text = STANDARD_NO_PAD.encode(nonce);
     nonce.zeroize();
     Ok(SealedPhrase {
         nonce: nonce_text,

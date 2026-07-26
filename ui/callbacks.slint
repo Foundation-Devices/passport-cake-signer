@@ -117,6 +117,7 @@ export global Callbacks {
     in-out property <[string]> dest-address-labels; // recipient amount + truncated address
     in-out property <string> tx-account-info;       // Cake account/subaddress metadata
     in-out property <int>    output-count;
+    in-out property <bool>   tx-loading;            // true while the unsigned tx parser is working
     in-out property <bool>   tx-loaded;             // gate the Sign button
     in-out property <bool>   signed-ok;             // true only if signing actually succeeded
     in-out property <bool>   signing;               // true while the signer thread is working

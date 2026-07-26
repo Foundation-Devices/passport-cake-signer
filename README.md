@@ -11,6 +11,9 @@ returns Cake-compatible signed transactions over animated QR.
 Current status: real hardware signing works. A transaction has been signed on
 Passport Prime, scanned back into Cake Wallet, and sent successfully.
 
+This repo is the app source snapshot. Build and hardware validation happen after
+syncing into the KeyOS integration worktree.
+
 ## Current Capabilities
 
 | Capability | Status |
@@ -66,6 +69,33 @@ xmr-txsigned QR ---------------------> Broadcast signed transaction
 
 The app also still has file-export hooks for view-only data, key images, and
 signed transactions, but the current demo path is QR-first.
+
+## Build and Validation
+
+The crate inherits dependencies from the KeyOS workspace, so validate it through
+the KeyOS integration worktree:
+
+```bash
+./scripts/check-in-keyos.sh /Users/admin/Documents/AI/KeyOS-cake-signer
+```
+
+The script syncs this repo into `apps/gui-app-cake-signer`, then runs KeyOS-side
+`cargo check`, app tests, app-only clippy, `xtask check`, and a hosted unsigned
+app build.
+
+Do not run `cargo test` from this standalone repo root; it will fail because
+workspace dependencies such as `foundation-ur` are defined by KeyOS.
+
+## Reliability Notes
+
+Transient signing artifacts are wallet-bound:
+
+- Pending unsigned transactions carry the wallet id that decoded them.
+- Signed transaction QR/file payloads carry the wallet id that produced them.
+- Key-image QR payloads carry the wallet id that produced them.
+- Wallet selection and wallet mutations invalidate pending work.
+- Unsigned transaction parsing runs off the UI callback path and is guarded by a
+  monotonic request id so stale workers cannot update a newer wallet context.
 
 ## Interop Boundary
 

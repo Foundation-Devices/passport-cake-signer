@@ -138,7 +138,7 @@ export component WalletDetailPagePage inherits Rectangle {
                         importance: Importance.primary;
                         clicked => {
                             Callbacks.scan-unsigned-tx();
-                            if Callbacks.tx-loaded {
+                            if Callbacks.tx-loaded || Callbacks.tx-loading {
                                 Navigate.review-page({ });
                             } else if Callbacks.keyimages-ready {
                                 Navigate.keyimage-qr-page({ });

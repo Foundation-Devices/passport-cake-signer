@@ -93,8 +93,11 @@ pub fn ur_text_payload_limited(
     let mut saw_frame = false;
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let lower = line.to_ascii_lowercase();
-        let ur = foundation_ur::UR::parse(&lower).map_err(|_| "Could not read Monero UR frames.")?;
-        decoder.receive(ur).map_err(|_| "Could not assemble Monero UR frames.")?;
+        let ur =
+            foundation_ur::UR::parse(&lower).map_err(|_| "Could not read Monero UR frames.")?;
+        decoder
+            .receive(ur)
+            .map_err(|_| "Could not assemble Monero UR frames.")?;
         saw_frame = true;
         if let Some(ur_type) = decoder.ur_type() {
             if ur_type != expected_type {
@@ -116,18 +119,31 @@ pub fn ur_text_payload_limited(
         return Err("Unexpected Monero UR type.");
     }
 
-    let data = decoder.message().ok().flatten().ok_or("Monero UR frames are incomplete.")?;
+    let data = decoder
+        .message()
+        .ok()
+        .flatten()
+        .ok_or("Monero UR frames are incomplete.")?;
     ur_payload_limited(data, max_len)
 }
 
 pub fn ur_string(ur_type: &str, blob: &[u8], max_size: i32) -> String {
-    ur_parts(ur_type, blob, max_size).iter().map(|part| part.to_string()).collect::<Vec<_>>().join("\n")
+    ur_parts(ur_type, blob, max_size)
+        .iter()
+        .map(|part| part.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Build the CupCake pairing JSON (`pairQrString`): the watch-only credentials
 /// Cake restores from. `restore_height` of 0 means Cake rescans from genesis —
 /// safe but slow; a real birthday height can be threaded in later.
-pub fn pair_json(label: &str, primary_address: &str, private_view_key: &str, restore_height: u64) -> String {
+pub fn pair_json(
+    label: &str,
+    primary_address: &str,
+    private_view_key: &str,
+    restore_height: u64,
+) -> String {
     #[derive(Serialize)]
     struct PairPayload<'a> {
         label: &'a str,
@@ -173,9 +189,14 @@ mod tests {
     fn signed_tx_sized_payload_is_multi_frame_lowercase_ur() {
         let payload = vec![0x42; 3_000];
         let parts = ur_parts(UR_TX_SIGNED, &payload, 500);
-        let frames = parts.iter().map(|part| part.to_string()).collect::<Vec<_>>();
+        let frames = parts
+            .iter()
+            .map(|part| part.to_string())
+            .collect::<Vec<_>>();
 
         assert!(frames.len() > 1, "expected animated QR, got one frame");
-        assert!(frames.iter().all(|frame| frame.starts_with("ur:xmr-txsigned/")));
+        assert!(frames
+            .iter()
+            .all(|frame| frame.starts_with("ur:xmr-txsigned/")));
     }
 }

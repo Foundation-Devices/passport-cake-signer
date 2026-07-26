@@ -105,7 +105,7 @@ export component ReviewPagePage inherits Rectangle {
                 p-y: Size.sz3;
 
                 Rectangle {
-                    height: 486px;
+                    vertical-stretch: 1;
                     clip: true;
 
                     Flickable {
@@ -183,7 +183,7 @@ export component ReviewPagePage inherits Rectangle {
 
                             CakeStatusBanner {
                                 text: Callbacks.status-text;
-                                danger: true;
+                                danger: !Callbacks.tx-loading;
                             }
                         }
                     }
@@ -195,20 +195,26 @@ export component ReviewPagePage inherits Rectangle {
                         importance: Importance.normal;
                         clicked => { Navigate.home-page({ }); }
                     }
-                    if Callbacks.tx-loaded && Callbacks.status-text == "": CakeSlideToSign {
+                    if Callbacks.tx-loading: CakeButton {
+                        label: "Reading transaction";
+                        importance: Importance.primary;
+                        enabled: false;
+                        loading: true;
+                    }
+                    if !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text == "": CakeSlideToSign {
                         signing: Callbacks.signing;
                         activated => {
                             Callbacks.sign-transaction();
                         }
                     }
-                    if Callbacks.tx-loaded && Callbacks.status-text != "": CakeButton {
+                    if !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text != "": CakeButton {
                         label: TR2.lookup(TrId.ReviewSign);
                         importance: Importance.primary;
                         clicked => {
                             Callbacks.sign-transaction();
                         }
                     }
-                    if !Callbacks.tx-loaded: CakeButton {
+                    if !Callbacks.tx-loading && !Callbacks.tx-loaded: CakeButton {
                         label: TR2.lookup(TrId.ReviewSign);
                         importance: Importance.primary;
                         enabled: false;
