@@ -6,7 +6,7 @@ built as a native KeyOS app and designed to pair with the public
 
 Cake remains the online/watch-only wallet. Passport Prime holds the Monero spend
 key offline, reviews unsigned transactions built by Cake, signs locally, and
-returns Cake-compatible signed transactions over animated QR.
+returns Cake-compatible signed transactions over animated QR or QuantumLink.
 
 Current status: real hardware signing works. A transaction has been signed on
 Passport Prime, scanned back into Cake Wallet, and sent successfully.
@@ -26,6 +26,8 @@ syncing into the KeyOS integration worktree.
 | Cake `xmr-txunsigned` scan, decrypt, auth-check, and review | Working |
 | On-device Monero signing and Cake `signed_tx_set` packaging | Working |
 | Cake broadcast after scanning Prime signed QR | Working |
+| QuantumLink watch restore, key-image sync, and transaction signing | Working |
+| QuantumLink request cancellation and stale-response suppression | Working |
 | Multiple Prime-derived wallet slots | Working |
 | Import existing 16-word Polyseed wallets | Working |
 | Import existing 24/25-word legacy Monero seeds | Working |
@@ -68,7 +70,8 @@ xmr-txsigned QR ---------------------> Broadcast signed transaction
 ```
 
 The app also still has file-export hooks for view-only data, key images, and
-signed transactions, but the current demo path is QR-first.
+signed transactions. QR remains the public-Cake fallback path; QuantumLink is the
+Android fork path for Bluetooth transport.
 
 ## Build and Validation
 
@@ -96,6 +99,9 @@ Transient signing artifacts are wallet-bound:
 - Wallet selection and wallet mutations invalidate pending work.
 - Unsigned transaction parsing runs off the UI callback path and is guarded by a
   monotonic request id so stale workers cannot update a newer wallet context.
+- QuantumLink requests are keyed by Cake request id. If Cake cancels an in-flight
+  request, Prime records that cancellation and suppresses the late worker result
+  instead of publishing a stale key-image or signed-transaction response.
 
 ## Interop Boundary
 

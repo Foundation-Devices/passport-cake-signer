@@ -37,6 +37,7 @@ template = ["gui-app", "fs-generic"]
     "SubscribeMoneroWatchCredentialsRequest",
     "SubscribeMoneroKeyImageSyncRequest",
     "SubscribeMoneroSignTransactionRequest",
+    "SubscribeWdkRequestCancelled",
     "PublishMoneroWatchCredentials",
     "PublishMoneroKeyImages",
     "PublishMoneroSignedTransaction",

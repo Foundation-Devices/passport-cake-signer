@@ -2,7 +2,7 @@
 
 Date: 2026-07-26
 
-Status: hardware-tested proof of concept
+Status: hardware-tested proof of concept with implemented QuantumLink transport
 
 Repository: `passport-cake-signer`
 
@@ -15,10 +15,8 @@ offline Monero signer for the public Cake Wallet mobile app.
 
 Cake Wallet remains the online/watch-only wallet. Passport Prime holds the
 private spend key, receives Cake's Monero wallet2 payloads, performs cold-side
-operations locally, and returns Cake-compatible payloads over animated QR. The
-current app also has experimental QuantumLink request/response plumbing so the
-same wallet2 payloads can move over a richer transport once the mobile flow is
-ready.
+operations locally, and returns Cake-compatible payloads over animated QR or
+QuantumLink. The same wallet2 payloads are used over both transports.
 
 The current architecture intentionally mimics the CupCake/Cake offline signing
 model instead of defining a new Prime-specific Monero protocol. This gives us
@@ -64,13 +62,17 @@ into Cake Wallet, and broadcast successfully.
 | On-device Monero signing | Working |
 | Cake-compatible `signed_tx_set` packaging | Working |
 | Cake broadcast after Prime signed QR | Working on tested transaction |
+| QuantumLink watch restore | Working |
+| QuantumLink key-image sync | Working |
+| QuantumLink transaction signing | Working |
+| QuantumLink cancel/reconnect lifecycle handling | Working |
 | Multiple Prime-derived wallet slots | Working |
 | Import 16-word Polyseed wallet | Working |
 | Import 24/25-word legacy Monero wallet | Working |
 | Seed import by QR, typed text, or text file | Working |
 | Address verification by QR or account/subaddress index | Working |
 | Archive/delete/restore wallet records | Working |
-| QuantumLink Prime-side request/response plumbing | Experimental |
+| QuantumLink Prime-side request/response plumbing | Working |
 
 ## 5. Glossary
 

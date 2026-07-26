@@ -18,7 +18,7 @@ mod qr;
 
 use std::{
     cell::OnceCell,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -34,6 +34,7 @@ use quantum_link::{
         PublishMoneroKeyImages, PublishMoneroSignedTransaction, PublishMoneroWatchCredentials,
         RejectWdkRequest, SubscribeMoneroKeyImageSyncRequest,
         SubscribeMoneroSignTransactionRequest, SubscribeMoneroWatchCredentialsRequest,
+        SubscribeWdkRequestCancelled,
     },
 };
 use slint_keyos_platform::{
@@ -115,6 +116,10 @@ struct AppState {
     address_cache: HashMap<String, AddressHit>,
     /// Monotonic guard for background address verification jobs.
     verify_request_id: u64,
+    /// QL request ids explicitly cancelled by Cake while a worker may still be
+    /// parsing/signing. Workers are not interruptible, so completion checks this
+    /// set before publishing a response.
+    cancelled_ql_requests: HashSet<Vec<u8>>,
 }
 
 struct PendingTx {
@@ -199,6 +204,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         tx_request_id: 0,
         address_cache: HashMap::new(),
         verify_request_id: 0,
+        cancelled_ql_requests: HashSet::new(),
     }));
 
     // Warm the CryptoNight-derived chacha file key off the GUI thread. Software
@@ -1018,18 +1024,38 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
     {
         let state = state.clone();
         spawn_local(async move {
+            let mut events =
+                subscribe_archive::<QuantumLinkPermissions, _>(SubscribeWdkRequestCancelled);
+            while let Some(request) = events.next().await {
+                mark_ql_request_cancelled(&state, request.request_id);
+            }
+        })
+        .detach();
+    }
+
+    {
+        let state = state.clone();
+        spawn_local(async move {
             let mut events = subscribe_archive::<QuantumLinkPermissions, _>(
                 SubscribeMoneroWatchCredentialsRequest,
             );
             while let Some(request) = events.next().await {
+                begin_ql_request(&state, &request.request_id);
                 let response = build_ql_watch_credentials(&state, request.request_id.clone());
                 match response {
                     Ok(message) => {
+                        if take_ql_request_cancelled(&state, &request.request_id) {
+                            continue;
+                        }
                         if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
                             log::warn!("failed to publish Monero watch credentials over QL: {e:?}");
                         }
                     }
-                    Err(message) => reject_wdk_request(request.request_id, message).await,
+                    Err(message) => {
+                        if !take_ql_request_cancelled(&state, &request.request_id) {
+                            reject_wdk_request(request.request_id, message).await;
+                        }
+                    }
                 }
             }
         })
@@ -1042,20 +1068,29 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
             let mut events =
                 subscribe_archive::<QuantumLinkPermissions, _>(SubscribeMoneroKeyImageSyncRequest);
             while let Some(request) = events.next().await {
+                begin_ql_request(&state, &request.request_id);
                 let request_id = request.request_id.clone();
                 let outputs_ur = request.outputs_ur.clone();
                 let state = state.clone();
+                let state_for_worker = state.clone();
                 let result = spawn_worker(async move {
-                    build_ql_key_image_ur(&state, request_id.clone(), &outputs_ur)
+                    build_ql_key_image_ur(&state_for_worker, request_id.clone(), &outputs_ur)
                 })
                 .await;
                 match result {
                     Ok(message) => {
+                        if take_ql_request_cancelled(&state, &request.request_id) {
+                            continue;
+                        }
                         if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
                             log::warn!("failed to publish Monero key images over QL: {e:?}");
                         }
                     }
-                    Err(message) => reject_wdk_request(request.request_id, message).await,
+                    Err(message) => {
+                        if !take_ql_request_cancelled(&state, &request.request_id) {
+                            reject_wdk_request(request.request_id, message).await;
+                        }
+                    }
                 }
             }
         })
@@ -1069,27 +1104,60 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                 SubscribeMoneroSignTransactionRequest,
             );
             while let Some(request) = events.next().await {
+                begin_ql_request(&state, &request.request_id);
                 let request_id = request.request_id.clone();
                 let unsigned_tx_ur = request.unsigned_tx_ur.clone();
                 let state = state.clone();
+                let state_for_worker = state.clone();
                 let result = spawn_worker(async move {
-                    build_ql_signed_tx_ur(&state, request_id.clone(), &unsigned_tx_ur)
+                    build_ql_signed_tx_ur(&state_for_worker, request_id.clone(), &unsigned_tx_ur)
                 })
                 .await;
                 match result {
                     Ok(message) => {
+                        if take_ql_request_cancelled(&state, &request.request_id) {
+                            continue;
+                        }
                         if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
                             log::warn!(
                                 "failed to publish Monero signed transaction over QL: {e:?}"
                             );
                         }
                     }
-                    Err(message) => reject_wdk_request(request.request_id, message).await,
+                    Err(message) => {
+                        if !take_ql_request_cancelled(&state, &request.request_id) {
+                            reject_wdk_request(request.request_id, message).await;
+                        }
+                    }
                 }
             }
         })
         .detach();
     }
+}
+
+fn begin_ql_request(state: &Arc<Mutex<AppState>>, request_id: &[u8]) {
+    state
+        .lock()
+        .unwrap()
+        .cancelled_ql_requests
+        .remove(request_id);
+}
+
+fn mark_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: Vec<u8>) {
+    let mut st = state.lock().unwrap();
+    if st.cancelled_ql_requests.len() >= 64 {
+        st.cancelled_ql_requests.clear();
+    }
+    st.cancelled_ql_requests.insert(request_id);
+}
+
+fn take_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: &[u8]) -> bool {
+    state
+        .lock()
+        .unwrap()
+        .cancelled_ql_requests
+        .remove(request_id)
 }
 
 fn build_ql_watch_credentials(
