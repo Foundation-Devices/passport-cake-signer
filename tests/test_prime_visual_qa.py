@@ -334,7 +334,42 @@ class PrimeVisualQaTests(unittest.TestCase):
         )
         self.assertIn("const CHARS_PER_BLOCK: usize = 4;", main)
         self.assertIn("const BLOCKS_PER_ROW: usize = 6;", main)
-        self.assertIn("HeadingXl {", source)
+
+    def test_quantum_link_address_verification_is_an_automatic_device_result(
+        self,
+    ) -> None:
+        source = (
+            Path(__file__).parents[1] / "ui" / "pages" / "verify-address" / "page.slint"
+        ).read_text(encoding="utf-8")
+        callbacks = (
+            Path(__file__).parents[1] / "ui" / "callbacks.slint"
+        ).read_text(encoding="utf-8")
+        main = (
+            Path(__file__).parents[1] / "src" / "main.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("Qrcode", source)
+        self.assertNotIn("Confirm on Prime", source)
+        self.assertNotIn('label: "Reject"', source)
+        self.assertNotIn("confirm-quantum-link-address", callbacks)
+        self.assertNotIn("reject-quantum-link-address", callbacks)
+        self.assertIn('"Address verified"', main)
+        self.assertIn('"Address mismatch"', main)
+        self.assertIn("component AddressBlockLine", source)
+        self.assertEqual(
+            source.count("AddressBlockLine { address: root.address;"),
+            4,
+        )
+        self.assertIn(
+            "color: Math.mod(row-index * 6 + index, 2) == 0",
+            source,
+        )
+        self.assertIn("matched: derived_address == request.address", main)
+        self.assertIn("PublishMoneroVerifiedAddress", main)
+        self.assertIn(
+            "Passport Prime derived a different address for this wallet index.",
+            main,
+        )
 
     def test_ql_signing_has_progress_and_acknowledged_success_states(
         self,
