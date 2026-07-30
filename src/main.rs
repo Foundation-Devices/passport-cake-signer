@@ -28,14 +28,17 @@ use monero::{keys::MoneroKeys, signer, txset, wallets, Network, TxSummary};
 use quantum_link::{
     foundation_api::wdk::{
         WdkMoneroKeyImageSyncResponse, WdkMoneroSignTransactionResponse,
+        WdkMoneroVerifyAddressRequest, WdkMoneroVerifyAddressResponse, WdkMoneroWalletMetadata,
         WdkMoneroWatchCredentialsResponse, WdkRequestRejected, WDK_PROTOCOL_VERSION,
     },
     messages::{
-        PublishMoneroKeyImages, PublishMoneroSignedTransaction, PublishMoneroWatchCredentials,
-        RejectWdkRequest, SubscribeMoneroKeyImageSyncRequest,
-        SubscribeMoneroSignTransactionRequest, SubscribeMoneroWatchCredentialsRequest,
-        SubscribeWdkRequestCancelled,
+        PublishMoneroKeyImages, PublishMoneroSignedTransaction, PublishMoneroVerifiedAddress,
+        PublishMoneroWalletMetadata, PublishMoneroWatchCredentials, RejectWdkRequest,
+        SubscribeMoneroKeyImageSyncRequest, SubscribeMoneroSignTransactionRequest,
+        SubscribeMoneroVerifyAddressRequest, SubscribeMoneroWatchCredentialsRequest,
+        SubscribePairingEvent, SubscribeWdkRequestCancelled, UnpairFromEnvoy,
     },
+    PairingEvent,
 };
 use slint_keyos_platform::{
     app, async_archive,
@@ -53,6 +56,7 @@ use slint_keyos_platform::{
 // `tr` helpers — so we deliberately do NOT `use fs::FileSystem` (that raw,
 // unparameterized type would shadow the alias and break the permission bounds).
 app!("Cake");
+bt::use_api!();
 quantum_link::use_api!();
 
 use quantum_link_permissions::QuantumLinkPermissions;
@@ -120,17 +124,43 @@ struct AppState {
     /// parsing/signing. Workers are not interruptible, so completion checks this
     /// set before publishing a response.
     cancelled_ql_requests: HashSet<Vec<u8>>,
+    /// Address verification waiting for explicit approval on Prime.
+    pending_ql_address: Option<PendingQlAddress>,
+    /// Wallet explicitly armed by the user for watch-only enrollment in Cake.
+    /// QuantumLink pairing is device-scoped; this keeps a later credentials
+    /// request tied to the wallet whose "Add to Cake" flow is on screen.
+    pending_ql_wallet_id: Option<String>,
+    /// The last key-image response, keyed by Cake's request id. If Bluetooth
+    /// drops the response after Prime has computed it, Cake can retry the same
+    /// logical request and Prime can replay it without another expensive pass.
+    last_ql_key_image_response: Option<CachedQlKeyImageResponse>,
 }
 
 struct PendingTx {
     wallet_id: String,
     raw: Vec<u8>,
+    ql_request_id: Option<Vec<u8>>,
+}
+
+#[derive(Clone)]
+struct PendingQlAddress {
+    request_id: Vec<u8>,
+    wallet_id: String,
+    account_index: u32,
+    address_index: u32,
+    address: String,
 }
 
 #[derive(Clone)]
 struct WalletArtifact {
     wallet_id: String,
     bytes: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct CachedQlKeyImageResponse {
+    request_id: Vec<u8>,
+    key_images_ur: String,
 }
 
 impl AppState {
@@ -148,6 +178,7 @@ impl AppState {
         self.pending = None;
         self.last_signed = None;
         self.last_keyimages = None;
+        self.last_ql_key_image_response = None;
         self.signing = false;
     }
 
@@ -205,6 +236,9 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         address_cache: HashMap::new(),
         verify_request_id: 0,
         cancelled_ql_requests: HashSet::new(),
+        pending_ql_address: None,
+        pending_ql_wallet_id: None,
+        last_ql_key_image_response: None,
     }));
 
     // Warm the CryptoNight-derived chacha file key off the GUI thread. Software
@@ -223,6 +257,12 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     }
 
     refresh_wallet_ui(&ui, &state);
+    init_quantum_link_pairing_ui(&ui, &state);
+
+    ui.global::<Callbacks>()
+        .on_format_address_row(|address, row| {
+            model_from_strings(address_block_row(address.as_str(), row))
+        });
 
     // -- export view-only credentials (one-time pairing) --------------------
     {
@@ -538,6 +578,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 }
                 refresh_wallet_ui(&ui, &state);
                 set_status(&ui, "");
+                if let Some(metadata) = active_linked_wallet_metadata(&state) {
+                    spawn_local(async move {
+                        if let Err(e) = publish_wallet_metadata(metadata).await {
+                            log::warn!(
+                                "failed to publish renamed Monero wallet metadata over QL: {e}"
+                            );
+                        }
+                    })
+                    .detach();
+                }
                 true
             });
     }
@@ -675,6 +725,91 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                     return false;
                 };
                 verify_address_index(&ui, &state, account.as_str(), index.as_str())
+            });
+    }
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.global::<Callbacks>()
+            .on_confirm_quantum_link_address(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                let pending = state.lock().unwrap().pending_ql_address.take();
+                let Some(pending) = pending else {
+                    set_status(&ui, "No Cake address request is waiting.");
+                    return;
+                };
+                let wallet_is_current = state
+                    .lock()
+                    .unwrap()
+                    .active_wallet()
+                    .map(|wallet| wallet.id == pending.wallet_id)
+                    .unwrap_or(false);
+                if !wallet_is_current {
+                    spawn_local(reject_wdk_request(
+                        pending.request_id,
+                        "The selected Prime wallet changed during address verification.".into(),
+                    ))
+                    .detach();
+                    set_status(&ui, "Wallet changed. Ask Cake to verify the address again.");
+                    return;
+                }
+                ui.global::<Callbacks>().set_verify_confirming(true);
+                let state = state.clone();
+                spawn_local(async move {
+                    if take_ql_request_cancelled(&state, &pending.request_id) {
+                        queue_with_ui(|ui| {
+                            ui.global::<Callbacks>().set_verify_confirming(false);
+                            set_status(ui, "Cake cancelled address verification.");
+                        });
+                        return;
+                    }
+                    let response = PublishMoneroVerifiedAddress {
+                        response: WdkMoneroVerifyAddressResponse {
+                            protocol_version: WDK_PROTOCOL_VERSION,
+                            request_id: pending.request_id.clone(),
+                            account_index: pending.account_index,
+                            address_index: pending.address_index,
+                            address: pending.address.clone(),
+                        },
+                    };
+                    match async_archive::<QuantumLinkPermissions, _>(response).await {
+                        Ok(()) => queue_with_ui(|ui| {
+                            clear_verify_ui(ui);
+                            set_status(ui, "");
+                            ui.global::<Navigate>()
+                                .invoke_wallet_detail_page(NavigateOptions {
+                                    replace: true,
+                                    animate: Animate::None,
+                                });
+                        }),
+                        Err(e) => {
+                            log::warn!("failed to publish verified Monero address over QL: {e:?}");
+                            state.lock().unwrap().pending_ql_address = Some(pending);
+                            queue_with_ui(|ui| {
+                                ui.global::<Callbacks>().set_verify_confirming(false);
+                                set_status(
+                                    ui,
+                                    "Could not send the verified address to Cake. Try again.",
+                                );
+                            });
+                        }
+                    }
+                })
+                .detach();
+            });
+    }
+    {
+        let state = state.clone();
+        ui.global::<Callbacks>()
+            .on_reject_quantum_link_address(move || {
+                let pending = state.lock().unwrap().pending_ql_address.take();
+                if let Some(pending) = pending {
+                    spawn_local(reject_wdk_request(
+                        pending.request_id,
+                        "Address verification was rejected on Passport Prime.".into(),
+                    ))
+                    .detach();
+                }
             });
     }
 
@@ -854,6 +989,52 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     {
         let state = state.clone();
         let weak = ui.as_weak();
+        ui.global::<Callbacks>()
+            .on_cancel_transaction_review(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                let request_id = {
+                    let mut st = state.lock().unwrap();
+                    let request_id = st
+                        .pending
+                        .as_ref()
+                        .and_then(|pending| pending.ql_request_id.clone());
+                    st.pending = None;
+                    st.last_signed = None;
+                    st.signing = false;
+                    request_id
+                };
+                reset_transaction_ui(&ui);
+                set_status(&ui, "");
+                if let Some(request_id) = request_id {
+                    spawn_local(reject_wdk_request(
+                        request_id,
+                        "Transaction signing was rejected on Passport Prime.".into(),
+                    ))
+                    .detach();
+                }
+            });
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.global::<Callbacks>()
+            .on_finish_transaction_review(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                {
+                    let mut st = state.lock().unwrap();
+                    st.pending = None;
+                    st.last_signed = None;
+                    st.signing = false;
+                }
+                reset_transaction_ui(&ui);
+                set_status(&ui, "");
+            });
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
         ui.global::<Callbacks>().on_sign_transaction(move || {
             let Some(ui) = weak.upgrade() else { return };
             // Only the real-success path flips this true; the UI navigates to the
@@ -861,7 +1042,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             ui.global::<Callbacks>().set_signed_ok(false);
             ui.global::<Callbacks>().set_signing(false);
             ui.global::<Callbacks>().set_status_text("".into());
-            let (wallet_id, raw, keys, network) = {
+            let (wallet_id, raw, keys, network, ql_request_id) = {
                 let mut st = state.lock().unwrap();
                 if st.signing {
                     return;
@@ -901,13 +1082,17 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 let network = st.network;
                 let wallet_id = pending.wallet_id.clone();
                 let raw = pending.raw.clone();
+                let ql_request_id = pending.ql_request_id.clone();
                 st.signing = true;
-                (wallet_id, raw, keys, network)
+                (wallet_id, raw, keys, network, ql_request_id)
             };
             ui.global::<Callbacks>().set_signing(true);
 
             let state = state.clone();
             std::thread::spawn(move || {
+                // Give Slint one frame to present the signing state before the
+                // CPU-intensive Monero signature work begins.
+                std::thread::sleep(std::time::Duration::from_millis(120));
                 // Sign the wallet2 unsigned tx with serai (CLSAG + Bulletproof+) and
                 // package it as a wallet2 `signed_tx_set` — the exact file Cake loads
                 // via "Import signed transaction" → submit_transfer. FEE_PER_WEIGHT
@@ -920,30 +1105,75 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                         .active_wallet()
                         .map(|wallet| wallet.id == wallet_id)
                         .unwrap_or(false)
-                        && st
-                            .pending
-                            .as_ref()
-                            .map(|pending| pending.wallet_id == wallet_id)
-                            .unwrap_or(false);
+                        && st.pending.as_ref().map(|pending| pending.wallet_id == wallet_id).unwrap_or(false);
                     if !still_current {
                         drop(st);
                         ui.global::<Callbacks>().set_signing(false);
                         ui.global::<Callbacks>().set_signed_ok(false);
-                        set_status(
-                            ui,
-                            "Wallet changed while signing. Scan the transaction again.",
-                        );
+                        set_status(ui, "Wallet changed while signing. Scan the transaction again.");
                         return;
                     }
                     match result {
                         Ok(bytes) => {
-                            // Stash for the animated-QR handoff. Saving to file is an
-                            // explicit follow-up action on the QR screen.
-                            st.last_signed = Some(WalletArtifact { wallet_id, bytes });
-                            drop(st);
-                            ui.global::<Callbacks>().set_signing(false);
-                            ui.global::<Callbacks>().set_signed_ok(true);
-                            ui.global::<Callbacks>().set_status_text("".into());
+                            st.last_signed =
+                                Some(WalletArtifact { wallet_id: wallet_id.clone(), bytes: bytes.clone() });
+                            if let Some(request_id) = ql_request_id {
+                                drop(st);
+                                let state = state.clone();
+                                spawn_local(async move {
+                                    if take_ql_request_cancelled(&state, &request_id) {
+                                        state.lock().unwrap().pending = None;
+                                        queue_with_ui(|ui| {
+                                            ui.global::<Callbacks>().set_signing(false);
+                                            reset_transaction_ui(ui);
+                                            set_status(ui, "");
+                                            ui.global::<Navigate>().invoke_wallet_detail_page(
+                                                NavigateOptions {
+                                                    replace: true,
+                                                    animate: Animate::None,
+                                                },
+                                            );
+                                        });
+                                        return;
+                                    }
+                                    let response = PublishMoneroSignedTransaction {
+                                        response: WdkMoneroSignTransactionResponse {
+                                            protocol_version: WDK_PROTOCOL_VERSION,
+                                            request_id,
+                                            signed_tx_ur: qr::ur_string(qr::UR_TX_SIGNED, &bytes, 500),
+                                        },
+                                    };
+                                    match async_archive::<QuantumLinkPermissions, _>(response).await {
+                                        Ok(()) => {
+                                            state.lock().unwrap().pending = None;
+                                            queue_with_ui(|ui| {
+                                                ui.global::<Callbacks>().set_status_text("".into());
+                                                ui.global::<Callbacks>().set_signed_ok(true);
+                                                ui.global::<Callbacks>().set_signing(false);
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "failed to publish Monero signed transaction over QL: {e:?}"
+                                            );
+                                            queue_with_ui(|ui| {
+                                                ui.global::<Callbacks>().set_signing(false);
+                                                set_status(
+                                                    ui,
+                                                    "Transaction signed, but could not be sent to Cake. Swipe again to retry.",
+                                                );
+                                            });
+                                        }
+                                    }
+                                })
+                                .detach();
+                            } else {
+                                // QR/file fallback remains explicit for offline exchange.
+                                drop(st);
+                                ui.global::<Callbacks>().set_signing(false);
+                                ui.global::<Callbacks>().set_signed_ok(true);
+                                ui.global::<Callbacks>().set_status_text("".into());
+                            }
                         }
                         Err(signer::SignError::Decrypt) => {
                             drop(st);
@@ -1020,6 +1250,279 @@ fn queue_with_ui(f: impl FnOnce(&AppWindow) + Send + 'static) {
     .detach();
 }
 
+fn queue_status(msg: impl Into<String>) {
+    let msg = msg.into();
+    queue_with_ui(move |ui| set_status(ui, &msg));
+}
+
+fn init_quantum_link_pairing_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
+    let cb = ui.global::<Callbacks>();
+    cb.set_ql_status_text("Preparing Bluetooth pairing code.".into());
+    cb.set_ql_cake_ready(false);
+    cb.set_ql_pairing_resetting(false);
+
+    let quantum: QuantumLinkApi = QuantumLinkApi::default();
+    cb.set_ql_identity_parts(ql_utils::animated_qr(&quantum));
+
+    {
+        let weak = ui.as_weak();
+        ql_utils::on_ble_address(BluetoothApi::default(), move |addr| {
+            let settings: SettingsApi = SettingsApi::default();
+            let qr = ql_utils::static_qr(&settings, &addr, true);
+            if let Some(ui) = weak.upgrade() {
+                let cb = ui.global::<Callbacks>();
+                cb.set_ql_static_qr(qr.into());
+                cb.set_ql_status_text("Scan the Bluetooth QR from Cake Wallet.".into());
+            }
+        });
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        spawn_local(async move {
+            let mut ql_status: QlStatus = QlStatus::new(slint_keyos_platform::worker().clone());
+            let mut was_live = false;
+            while let Some(status) = ql_status.next().await {
+                if status.live && !was_live {
+                    let metadata = linked_wallet_metadata(&state);
+                    for item in metadata {
+                        if let Err(e) = publish_wallet_metadata(item).await {
+                            log::warn!("failed to replay Monero wallet metadata over QL: {e}");
+                            break;
+                        }
+                    }
+                }
+                was_live = status.live;
+                if let Some(ui) = weak.upgrade() {
+                    let cb = ui.global::<Callbacks>();
+                    cb.set_ql_bt_connected(status.bt_connected);
+                    cb.set_ql_paired(status.ql_paired);
+                    cb.set_ql_live(status.live);
+                    refresh_ql_cake_ready(&ui);
+                    cb.set_ql_status_text(
+                        ql_status_text(
+                            status.bt_connected,
+                            status.ql_paired,
+                            status.live,
+                            ql_peer_is_cake(cb.get_ql_paired_device_name().as_str()),
+                        )
+                        .into(),
+                    );
+                }
+            }
+        })
+        .detach();
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        spawn_local(async move {
+            let mut events = subscribe_archive::<QuantumLinkPermissions, _>(SubscribePairingEvent);
+            while let Some(event) = events.next().await {
+                if let Some(ui) = weak.upgrade() {
+                    let cb = ui.global::<Callbacks>();
+                    match event {
+                        PairingEvent::RequestReceived => {
+                            cb.set_ql_pairing_resetting(false);
+                            cb.set_ql_status_text("Pairing request received from Cake.".into());
+                        }
+                        PairingEvent::PairingComplete { device_name, new } => {
+                            if new {
+                                if let Err(message) = clear_wallet_cake_links(&state) {
+                                    log::warn!("{message}");
+                                }
+                                refresh_wallet_ui(&ui, &state);
+                            }
+                            cb.set_ql_pairing_resetting(false);
+                            cb.set_ql_paired_device_name(device_name.into());
+                            refresh_ql_cake_ready(&ui);
+                            cb.set_ql_status_text(
+                                if cb.get_ql_cake_ready() {
+                                    "Cake Wallet is securely connected."
+                                } else {
+                                    "Cake Wallet paired. Confirming the secure link."
+                                }
+                                .into(),
+                            );
+                        }
+                        PairingEvent::PairingFailed => {
+                            cb.set_ql_pairing_resetting(false);
+                            refresh_ql_cake_ready(&ui);
+                            cb.set_ql_status_text(
+                                "Pairing failed. Keep this screen open and try again from Cake."
+                                    .into(),
+                            );
+                        }
+                        PairingEvent::Disconnected => {
+                            {
+                                state.lock().unwrap().pending_ql_wallet_id = None;
+                            }
+                            if let Err(message) = clear_wallet_cake_links(&state) {
+                                log::warn!("{message}");
+                            }
+                            refresh_wallet_ui(&ui, &state);
+                            cb.set_ql_pairing_resetting(false);
+                            cb.set_ql_paired(false);
+                            cb.set_ql_live(false);
+                            cb.set_ql_cake_ready(false);
+                            cb.set_ql_paired_device_name("".into());
+                            cb.set_ql_status_text("QuantumLink disconnected.".into());
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.global::<Callbacks>().on_begin_quantum_link_pairing(move || {
+            if let Some(ui) = weak.upgrade() {
+                let cb = ui.global::<Callbacks>();
+                let armed = {
+                    let mut st = state.lock().unwrap();
+                    match st.active_wallet() {
+                        Ok(wallet) if !wallet.archived => {
+                            let wallet_id = wallet.id.clone();
+                            st.pending_ql_wallet_id =
+                                (!wallet.cake_linked).then_some(wallet_id);
+                            Ok(())
+                        }
+                        Ok(_) => Err("Restore this wallet before adding it to Cake.".to_string()),
+                        Err(e) => Err(format!("{e}")),
+                    }
+                };
+                if let Err(message) = armed {
+                    cb.set_ql_status_text(message.into());
+                    return;
+                }
+
+                refresh_ql_cake_ready(&ui);
+                cb.set_ql_pairing_resetting(false);
+                if cb.get_ql_cake_ready() {
+                    cb.set_ql_status_text("QuantumLink is ready to add this wallet to Cake.".into());
+                } else if cb.get_ql_cake_paired() {
+                    cb.set_ql_status_text("Open Cake Wallet to reconnect QuantumLink.".into());
+                } else if cb.get_ql_paired() {
+                    cb.set_ql_status_text(
+                        "Prime is paired with another app. Disconnect that QuantumLink connection in KeyOS settings before pairing Cake."
+                            .into(),
+                    );
+                } else {
+                    cb.set_ql_status_text(
+                        ql_status_text(
+                            cb.get_ql_bt_connected(),
+                            cb.get_ql_paired(),
+                            cb.get_ql_live(),
+                            ql_peer_is_cake(cb.get_ql_paired_device_name().as_str()),
+                        )
+                        .into(),
+                    );
+                }
+            }
+        });
+    }
+
+    {
+        let state = state.clone();
+        ui.global::<Callbacks>()
+            .on_cancel_quantum_link_wallet_enrollment(move || {
+                state.lock().unwrap().pending_ql_wallet_id = None;
+            });
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.global::<Callbacks>()
+            .on_unlink_active_wallet_from_cake(move || {
+                let result = unlink_active_wallet_from_cake(&state);
+                if let Some(ui) = weak.upgrade() {
+                    match result {
+                        Ok(()) => {
+                            refresh_wallet_ui(&ui, &state);
+                            set_status(&ui, "");
+                            true
+                        }
+                        Err(message) => {
+                            set_status(&ui, &message);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            });
+    }
+
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.global::<Callbacks>()
+            .on_disconnect_quantum_link(move || {
+                state.lock().unwrap().pending_ql_wallet_id = None;
+                if let Err(message) = clear_wallet_cake_links(&state) {
+                    log::warn!("{message}");
+                }
+                if let Some(ui) = weak.upgrade() {
+                    refresh_wallet_ui(&ui, &state);
+                    let cb = ui.global::<Callbacks>();
+                    cb.set_ql_paired(false);
+                    cb.set_ql_live(false);
+                    cb.set_ql_cake_paired(false);
+                    cb.set_ql_cake_ready(false);
+                    cb.set_ql_paired_device_name("".into());
+                    cb.set_ql_pairing_resetting(false);
+                    cb.set_ql_status_text("Cake Wallet disconnected.".into());
+                }
+
+                spawn_local(async move {
+                    if let Err(e) =
+                        async_archive::<QuantumLinkPermissions, _>(UnpairFromEnvoy).await
+                    {
+                        log::warn!("failed to unpair QuantumLink: {e:?}");
+                    }
+                })
+                .detach();
+            });
+    }
+}
+
+fn ql_peer_is_cake(device_name: &str) -> bool {
+    device_name.eq_ignore_ascii_case("Cake Wallet")
+}
+
+fn refresh_ql_cake_ready(ui: &AppWindow) {
+    let cb = ui.global::<Callbacks>();
+    let cake_paired =
+        cb.get_ql_paired() && ql_peer_is_cake(cb.get_ql_paired_device_name().as_str());
+    cb.set_ql_cake_paired(cake_paired);
+    cb.set_ql_cake_ready(cake_paired && cb.get_ql_live());
+}
+
+fn ql_status_text(
+    bt_connected: bool,
+    ql_paired: bool,
+    live: bool,
+    peer_is_cake: bool,
+) -> &'static str {
+    if live && peer_is_cake {
+        "QuantumLink is connected to Cake Wallet."
+    } else if ql_paired && peer_is_cake {
+        "Cake Wallet is paired. Confirming the secure link."
+    } else if ql_paired {
+        "Preparing a fresh Cake Wallet pairing."
+    } else if bt_connected {
+        "Bluetooth connected. Scan the identity QR in Cake Wallet."
+    } else {
+        "Scan the Bluetooth QR from Cake Wallet."
+    }
+}
+
 fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
     {
         let state = state.clone();
@@ -1043,16 +1546,24 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                 begin_ql_request(&state, &request.request_id);
                 let response = build_ql_watch_credentials(&state, request.request_id.clone());
                 match response {
-                    Ok(message) => {
+                    Ok((message, wallet_id)) => {
                         if take_ql_request_cancelled(&state, &request.request_id) {
                             continue;
                         }
                         if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
                             log::warn!("failed to publish Monero watch credentials over QL: {e:?}");
+                            queue_status("Could not send watch-only wallet details to Cake.");
+                        } else if let Err(message) = mark_wallet_cake_linked(&state, &wallet_id) {
+                            log::warn!("{message}");
+                            queue_status(message);
+                        } else {
+                            let ui_state = state.clone();
+                            queue_with_ui(move |ui| refresh_wallet_ui(ui, &ui_state));
                         }
                     }
                     Err(message) => {
                         if !take_ql_request_cancelled(&state, &request.request_id) {
+                            queue_status(message.clone());
                             reject_wdk_request(request.request_id, message).await;
                         }
                     }
@@ -1069,6 +1580,31 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                 subscribe_archive::<QuantumLinkPermissions, _>(SubscribeMoneroKeyImageSyncRequest);
             while let Some(request) = events.next().await {
                 begin_ql_request(&state, &request.request_id);
+                let cached = {
+                    let st = state.lock().unwrap();
+                    st.last_ql_key_image_response
+                        .as_ref()
+                        .filter(|cached| cached.request_id == request.request_id)
+                        .cloned()
+                };
+                if let Some(cached) = cached {
+                    queue_status("Cake retried spent-output sync. Resending the saved response.");
+                    let message = PublishMoneroKeyImages {
+                        response: WdkMoneroKeyImageSyncResponse {
+                            protocol_version: WDK_PROTOCOL_VERSION,
+                            request_id: cached.request_id,
+                            key_images_ur: cached.key_images_ur,
+                        },
+                    };
+                    if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
+                        log::warn!("failed to replay Monero key images over QL: {e:?}");
+                        queue_status("Could not resend spent-output sync to Cake.");
+                    } else {
+                        queue_status("Spent-output sync response sent. Cake is importing it now.");
+                    }
+                    continue;
+                }
+                queue_status("Cake requested spent-output sync.");
                 let request_id = request.request_id.clone();
                 let outputs_ur = request.outputs_ur.clone();
                 let state = state.clone();
@@ -1080,14 +1616,28 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                 match result {
                     Ok(message) => {
                         if take_ql_request_cancelled(&state, &request.request_id) {
+                            queue_status("Cake cancelled spent-output sync.");
                             continue;
+                        }
+                        {
+                            let mut st = state.lock().unwrap();
+                            st.last_ql_key_image_response = Some(CachedQlKeyImageResponse {
+                                request_id: message.response.request_id.clone(),
+                                key_images_ur: message.response.key_images_ur.clone(),
+                            });
                         }
                         if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
                             log::warn!("failed to publish Monero key images over QL: {e:?}");
+                            queue_status("Could not send spent-output sync to Cake.");
+                        } else {
+                            queue_status(
+                                "Spent-output sync response sent. Cake is importing it now.",
+                            );
                         }
                     }
                     Err(message) => {
                         if !take_ql_request_cancelled(&state, &request.request_id) {
+                            queue_status(message.clone());
                             reject_wdk_request(request.request_id, message).await;
                         }
                     }
@@ -1110,23 +1660,87 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                 let state = state.clone();
                 let state_for_worker = state.clone();
                 let result = spawn_worker(async move {
-                    build_ql_signed_tx_ur(&state_for_worker, request_id.clone(), &unsigned_tx_ur)
+                    stage_ql_signing_request(&state_for_worker, request_id, &unsigned_tx_ur)
                 })
                 .await;
                 match result {
-                    Ok(message) => {
+                    Ok(summary) => {
                         if take_ql_request_cancelled(&state, &request.request_id) {
+                            state.lock().unwrap().pending = None;
                             continue;
                         }
-                        if let Err(e) = async_archive::<QuantumLinkPermissions, _>(message).await {
-                            log::warn!(
-                                "failed to publish Monero signed transaction over QL: {e:?}"
-                            );
-                        }
+                        let ui_state = state.clone();
+                        queue_with_ui(move |ui| {
+                            reset_transaction_ui(ui);
+                            refresh_wallet_ui(ui, &ui_state);
+                            populate_review(ui, &summary);
+                            ui.global::<Callbacks>().set_tx_via_quantum_link(true);
+                            ui.global::<Callbacks>().set_tx_loaded(true);
+                            ui.global::<Callbacks>().set_status_text("".into());
+                            ui.global::<Navigate>().invoke_review_page(NavigateOptions {
+                                replace: false,
+                                animate: Animate::None,
+                            });
+                        });
                     }
                     Err(message) => {
                         if !take_ql_request_cancelled(&state, &request.request_id) {
                             reject_wdk_request(request.request_id, message).await;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+    }
+
+    {
+        let state = state.clone();
+        spawn_local(async move {
+            let mut events =
+                subscribe_archive::<QuantumLinkPermissions, _>(SubscribeMoneroVerifyAddressRequest);
+            while let Some(request) = events.next().await {
+                begin_ql_request(&state, &request.request_id);
+                let request_id = request.request_id.clone();
+                let state_for_worker = state.clone();
+                let result =
+                    spawn_worker(
+                        async move { stage_ql_address_request(&state_for_worker, request) },
+                    )
+                    .await;
+                match result {
+                    Ok(pending) => {
+                        if take_ql_request_cancelled(&state, &request_id) {
+                            state.lock().unwrap().pending_ql_address = None;
+                            continue;
+                        }
+                        let ui_state = state.clone();
+                        queue_with_ui(move |ui| {
+                            refresh_wallet_ui(ui, &ui_state);
+                            clear_verify_ui(ui);
+                            ui.global::<Callbacks>().set_verify_via_quantum_link(true);
+                            set_verify_result(
+                                ui,
+                                true,
+                                "Confirm receive address",
+                                &format!(
+                                    "{} · account {} / subaddress {}",
+                                    ui.global::<Callbacks>().get_wallet_label(),
+                                    pending.account_index,
+                                    pending.address_index
+                                ),
+                                &pending.address,
+                            );
+                            ui.global::<Navigate>()
+                                .invoke_verify_address_page(NavigateOptions {
+                                    replace: false,
+                                    animate: Animate::None,
+                                });
+                        });
+                    }
+                    Err(message) => {
+                        if !take_ql_request_cancelled(&state, &request_id) {
+                            reject_wdk_request(request_id, message).await;
                         }
                     }
                 }
@@ -1149,7 +1763,42 @@ fn mark_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: Vec<u8>) 
     if st.cancelled_ql_requests.len() >= 64 {
         st.cancelled_ql_requests.clear();
     }
-    st.cancelled_ql_requests.insert(request_id);
+    st.cancelled_ql_requests.insert(request_id.clone());
+    let cancelled_address = st
+        .pending_ql_address
+        .as_ref()
+        .map(|pending| pending.request_id == request_id)
+        .unwrap_or(false);
+    if cancelled_address {
+        st.pending_ql_address = None;
+    }
+    let cancelled_tx = st
+        .pending
+        .as_ref()
+        .and_then(|pending| pending.ql_request_id.as_ref())
+        .map(|pending_id| pending_id == &request_id)
+        .unwrap_or(false);
+    if cancelled_tx && !st.signing {
+        st.pending = None;
+    }
+    drop(st);
+
+    if cancelled_address || (cancelled_tx && !state.lock().unwrap().signing) {
+        queue_with_ui(move |ui| {
+            if cancelled_address {
+                clear_verify_ui(ui);
+            }
+            if cancelled_tx {
+                reset_transaction_ui(ui);
+            }
+            set_status(ui, "");
+            ui.global::<Navigate>()
+                .invoke_wallet_detail_page(NavigateOptions {
+                    replace: true,
+                    animate: Animate::None,
+                });
+        });
+    }
 }
 
 fn take_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: &[u8]) -> bool {
@@ -1163,22 +1812,138 @@ fn take_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: &[u8]) ->
 fn build_ql_watch_credentials(
     state: &Arc<Mutex<AppState>>,
     request_id: Vec<u8>,
-) -> Result<PublishMoneroWatchCredentials, String> {
+) -> Result<(PublishMoneroWatchCredentials, String), String> {
     let st = state.lock().unwrap();
-    let wallet = st.active_wallet().map_err(|e| format!("{e}"))?;
+    let wallet_id = st.pending_ql_wallet_id.as_deref().ok_or_else(|| {
+        "Open the wallet on Passport Prime and choose Add to Cake before adding it in Cake Wallet."
+            .to_string()
+    })?;
+    let wallet = st
+        .wallet_book
+        .records
+        .iter()
+        .find(|wallet| wallet.id == wallet_id)
+        .ok_or_else(|| "The wallet selected for Cake is no longer available.".to_string())?;
     if wallet.archived {
         return Err("Restore this wallet before pairing it with Cake.".into());
     }
     let keys = wallet.keys(&st.app_seed).map_err(|e| format!("{e}"))?;
-    Ok(PublishMoneroWatchCredentials {
-        response: WdkMoneroWatchCredentialsResponse {
-            protocol_version: WDK_PROTOCOL_VERSION,
-            request_id,
-            address: keys.primary_address(st.network),
-            watch_key: keys.private_view_key_hex(),
-            restore_height: Some(wallet.restore_height),
+    Ok((
+        PublishMoneroWatchCredentials {
+            response: WdkMoneroWatchCredentialsResponse {
+                protocol_version: WDK_PROTOCOL_VERSION,
+                request_id,
+                address: keys.primary_address(st.network),
+                watch_key: keys.private_view_key_hex(),
+                restore_height: Some(wallet.restore_height),
+                wallet_name: wallet.label.clone(),
+            },
         },
+        wallet.id.clone(),
+    ))
+}
+
+fn wallet_metadata(
+    st: &AppState,
+    wallet: &wallets::WalletRecord,
+) -> Result<WdkMoneroWalletMetadata, String> {
+    let keys = wallet.keys(&st.app_seed).map_err(|e| format!("{e}"))?;
+    Ok(WdkMoneroWalletMetadata {
+        protocol_version: WDK_PROTOCOL_VERSION,
+        wallet_address: keys.primary_address(st.network),
+        wallet_name: wallet.label.clone(),
     })
+}
+
+fn active_linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Option<WdkMoneroWalletMetadata> {
+    let st = state.lock().unwrap();
+    let wallet = st.active_wallet().ok()?;
+    wallet
+        .cake_linked
+        .then(|| wallet_metadata(&st, wallet))
+        .transpose()
+        .ok()
+        .flatten()
+}
+
+fn linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Vec<WdkMoneroWalletMetadata> {
+    let st = state.lock().unwrap();
+    st.wallet_book
+        .records
+        .iter()
+        .filter(|wallet| wallet.cake_linked && !wallet.archived)
+        .filter_map(|wallet| match wallet_metadata(&st, wallet) {
+            Ok(metadata) => Some(metadata),
+            Err(e) => {
+                log::warn!(
+                    "could not build Monero wallet metadata for {}: {e}",
+                    wallet.id
+                );
+                None
+            }
+        })
+        .collect()
+}
+
+async fn publish_wallet_metadata(metadata: WdkMoneroWalletMetadata) -> Result<(), String> {
+    async_archive::<QuantumLinkPermissions, _>(PublishMoneroWalletMetadata { metadata })
+        .await
+        .map_err(|e| format!("{e:?}"))
+}
+
+fn mark_wallet_cake_linked(state: &Arc<Mutex<AppState>>, wallet_id: &str) -> Result<(), String> {
+    let save = {
+        let mut st = state.lock().unwrap();
+        let changed = st
+            .wallet_book
+            .set_cake_linked(wallet_id, true)
+            .map_err(|e| format!("{e}"))?;
+        if st.pending_ql_wallet_id.as_deref() == Some(wallet_id) {
+            st.pending_ql_wallet_id = None;
+        }
+        changed.then(|| (st.data_dir.clone(), st.wallet_book.clone()))
+    };
+
+    if let Some((data_dir, book)) = save {
+        save_wallet_book(&data_dir, &book)
+            .map_err(|e| format!("Could not remember which wallet is connected to Cake: {e}"))?;
+    }
+    Ok(())
+}
+
+fn unlink_active_wallet_from_cake(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
+    let save = {
+        let mut st = state.lock().unwrap();
+        let wallet_id = st.active_wallet().map_err(|e| format!("{e}"))?.id.clone();
+        let changed = st
+            .wallet_book
+            .set_cake_linked(&wallet_id, false)
+            .map_err(|e| format!("{e}"))?;
+        if st.pending_ql_wallet_id.as_deref() == Some(wallet_id.as_str()) {
+            st.pending_ql_wallet_id = None;
+        }
+        changed.then(|| (st.data_dir.clone(), st.wallet_book.clone()))
+    };
+
+    if let Some((data_dir, book)) = save {
+        save_wallet_book(&data_dir, &book)
+            .map_err(|e| format!("Could not remove this wallet from Cake: {e}"))?;
+    }
+    Ok(())
+}
+
+fn clear_wallet_cake_links(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
+    let save = {
+        let mut st = state.lock().unwrap();
+        let changed = st.wallet_book.clear_cake_links();
+        changed.then(|| (st.data_dir.clone(), st.wallet_book.clone()))
+    };
+
+    if let Some((data_dir, book)) = save {
+        save_wallet_book(&data_dir, &book)
+            .map_err(|e| format!("Could not clear the saved Cake connection: {e}"))?;
+    }
+    Ok(())
 }
 
 fn build_ql_key_image_ur(
@@ -1202,6 +1967,12 @@ fn build_ql_key_image_ur(
                 continue;
             };
             if let Some(export) = monero::keyimage::parse_output_export_file(&raw, &keys) {
+                if !wallet.cake_linked {
+                    return Err(
+                        "This wallet is not linked to Cake. Open it on Prime and choose Add to Cake first."
+                            .into(),
+                    );
+                }
                 matched = Some((index, wallet.id.clone(), keys, export));
                 break;
             }
@@ -1249,65 +2020,144 @@ fn build_ql_key_image_ur(
     })
 }
 
-fn build_ql_signed_tx_ur(
+fn stage_ql_signing_request(
     state: &Arc<Mutex<AppState>>,
     request_id: Vec<u8>,
     unsigned_tx_ur: &str,
-) -> Result<PublishMoneroSignedTransaction, String> {
+) -> Result<TxSummary, String> {
     let raw = qr::ur_text_payload_limited(unsigned_tx_ur, qr::UR_TX_UNSIGNED, MAX_TXSET_QR_BYTES)
         .map_err(str::to_string)?;
 
-    let (wallet_id, keys, network) = find_ql_signing_wallet(state, &raw)?;
-    let signed = signer::build_signed_tx_set(&raw, &keys, network, FEE_PER_WEIGHT)
-        .map_err(|e| format!("Cannot sign: {e}"))?;
-
-    {
+    let (summary, save) = {
         let mut st = state.lock().unwrap();
-        st.last_signed = Some(WalletArtifact {
-            wallet_id,
-            bytes: signed.clone(),
-        });
-    }
+        if st.signing
+            || st
+                .pending
+                .as_ref()
+                .and_then(|pending| pending.ql_request_id.as_ref())
+                .is_some()
+            || st.pending_ql_address.is_some()
+        {
+            return Err("Finish the current Cake request on Passport Prime first.".into());
+        }
 
-    Ok(PublishMoneroSignedTransaction {
-        response: WdkMoneroSignTransactionResponse {
-            protocol_version: WDK_PROTOCOL_VERSION,
-            request_id,
-            signed_tx_ur: qr::ur_string(qr::UR_TX_SIGNED, &signed, 500),
-        },
-    })
+        let mut matched = None;
+        let mut last_parse_error = None;
+        for wallet in &st.wallet_book.records {
+            if wallet.archived {
+                continue;
+            }
+            let Ok(keys) = wallet.keys(&st.app_seed) else {
+                continue;
+            };
+            let view_secret = keys.view_secret_bytes();
+            let spend_pub = keys.public_spend();
+            match txset::UnsignedTxSet::parse(&raw, &view_secret, &spend_pub, st.network) {
+                Ok(unsigned) => {
+                    if !wallet.cake_linked {
+                        return Err(
+                            "This wallet is not linked to Cake. Open it on Prime and choose Add to Cake first."
+                                .into(),
+                        );
+                    }
+                    matched = Some((wallet.id.clone(), unsigned.summary().clone()));
+                    break;
+                }
+                Err(e) if is_wrong_wallet_tx_error(&e) => {}
+                Err(e) => last_parse_error = Some(e),
+            }
+        }
+
+        let Some((wallet_id, summary)) = matched else {
+            return Err(last_parse_error
+                .as_ref()
+                .map(friendly_unsigned_tx_error)
+                .unwrap_or_else(|| {
+                    "This transaction does not match any active Prime wallet.".into()
+                }));
+        };
+
+        st.invalidate_wallet_artifacts();
+        st.wallet_book
+            .select_id(&wallet_id)
+            .map_err(|e| format!("{e}"))?;
+        st.pending = Some(PendingTx {
+            wallet_id,
+            raw,
+            ql_request_id: Some(request_id),
+        });
+        (summary, (st.data_dir.clone(), st.wallet_book.clone()))
+    };
+
+    save_wallet_book(&save.0, &save.1)
+        .map_err(|e| format!("Could not select the wallet requested by Cake: {e}"))?;
+    Ok(summary)
 }
 
-fn find_ql_signing_wallet(
+fn stage_ql_address_request(
     state: &Arc<Mutex<AppState>>,
-    raw: &[u8],
-) -> Result<(String, MoneroKeys, Network), String> {
-    let st = state.lock().unwrap();
-    let app_seed = st.app_seed;
-    let network = st.network;
+    request: WdkMoneroVerifyAddressRequest,
+) -> Result<PendingQlAddress, String> {
+    if request.protocol_version != WDK_PROTOCOL_VERSION {
+        return Err("Cake sent an unsupported address verification request.".into());
+    }
 
-    let mut last_parse_error = None;
-    for wallet in &st.wallet_book.records {
-        if wallet.archived {
-            continue;
+    let (pending, save) = {
+        let mut st = state.lock().unwrap();
+        if st.signing
+            || st
+                .pending
+                .as_ref()
+                .and_then(|pending| pending.ql_request_id.as_ref())
+                .is_some()
+            || st.pending_ql_address.is_some()
+        {
+            return Err("Finish the current Cake request on Passport Prime first.".into());
         }
-        let Ok(keys) = wallet.keys(&app_seed) else {
-            continue;
+
+        let mut matched = None;
+        for wallet in &st.wallet_book.records {
+            if wallet.archived {
+                continue;
+            }
+            let Ok(keys) = wallet.keys(&st.app_seed) else {
+                continue;
+            };
+            if keys.primary_address(st.network) == request.wallet_address {
+                if !wallet.cake_linked {
+                    return Err(
+                        "This wallet is not linked to Cake. Open it on Prime and choose Add to Cake first."
+                            .into(),
+                    );
+                }
+                let address =
+                    keys.address_at(st.network, request.account_index, request.address_index);
+                matched = Some((wallet.id.clone(), address));
+                break;
+            }
+        }
+        let Some((wallet_id, address)) = matched else {
+            return Err("This address request does not match any active Prime wallet.".into());
         };
-        let view_secret = keys.view_secret_bytes();
-        let spend_pub = keys.public_spend();
-        match txset::UnsignedTxSet::parse(raw, &view_secret, &spend_pub, network) {
-            Ok(_) => return Ok((wallet.id.clone(), keys, network)),
-            Err(e) if is_wrong_wallet_tx_error(&e) => {}
-            Err(e) => last_parse_error = Some(e),
-        }
-    }
 
-    if let Some(e) = last_parse_error {
-        Err(friendly_unsigned_tx_error(&e))
-    } else {
-        Err("This transaction does not match any active Prime wallet.".into())
-    }
+        st.invalidate_wallet_artifacts();
+        st.wallet_book
+            .select_id(&wallet_id)
+            .map_err(|e| format!("{e}"))?;
+        let pending = PendingQlAddress {
+            request_id: request.request_id,
+            wallet_id,
+            account_index: request.account_index,
+            address_index: request.address_index,
+            address,
+        };
+        st.pending_ql_address = Some(pending.clone());
+        (pending, (st.data_dir.clone(), st.wallet_book.clone()))
+    };
+
+    save_wallet_book(&save.0, &save.1)
+        .map_err(|e| format!("Could not select the wallet requested by Cake: {e}"))?;
+    Ok(pending)
 }
 
 async fn reject_wdk_request(request_id: Vec<u8>, message: String) {
@@ -1435,6 +2285,7 @@ fn prepare_unsigned_tx_for_wallet(
                 st.pending = Some(PendingTx {
                     wallet_id: wallet.id.clone(),
                     raw: bytes,
+                    ql_request_id: None,
                 });
                 (data_dir, book)
             };
@@ -1510,6 +2361,7 @@ fn store_loaded_unsigned_tx(
     st.pending = Some(PendingTx {
         wallet_id,
         raw: bytes,
+        ql_request_id: None,
     });
     st.last_signed = None;
     st.last_keyimages = None;
@@ -1640,6 +2492,7 @@ fn reset_transaction_ui(ui: &AppWindow) {
     cb.set_keyimage_sync_detail("".into());
     cb.set_signed_ok(false);
     cb.set_signing(false);
+    cb.set_tx_via_quantum_link(false);
     cb.set_dest_address("".into());
     cb.set_dest_addresses(model_from_strings(Vec::new()));
     cb.set_dest_address_labels(model_from_strings(Vec::new()));
@@ -1652,6 +2505,8 @@ fn clear_verify_ui(ui: &AppWindow) {
     cb.set_verify_title("".into());
     cb.set_verify_detail("".into());
     cb.set_verify_address("".into());
+    cb.set_verify_via_quantum_link(false);
+    cb.set_verify_confirming(false);
 }
 
 fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
@@ -1688,13 +2543,14 @@ fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
             cb.set_wallets(ModelRc::new(VecModel::from(active_rows)));
             cb.set_archived_wallets(ModelRc::new(VecModel::from(archived_rows)));
             cb.set_wallet_derived(matches!(wallet.kind, wallets::WalletKind::DeviceSlot));
+            cb.set_wallet_cake_linked(wallet.cake_linked);
             cb.set_wallet_count(st.wallet_book.active_count() as i32);
             cb.set_archived_wallet_count(st.wallet_book.archived_count() as i32);
             cb.set_wallet_archived(wallet.archived);
             cb.set_wallet_can_archive(st.wallet_book.can_archive_selected());
             cb.set_wallet_can_restore(st.wallet_book.can_restore_selected());
             cb.set_wallet_can_delete(st.wallet_book.can_delete_selected());
-            cb.set_primary_address(truncate(&address).into());
+            cb.set_primary_address(address.clone().into());
         }
         Err(e) => {
             let active_rows = st
@@ -1722,6 +2578,7 @@ fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
             cb.set_wallets(ModelRc::new(VecModel::from(active_rows)));
             cb.set_archived_wallets(ModelRc::new(VecModel::from(archived_rows)));
             cb.set_wallet_derived(false);
+            cb.set_wallet_cake_linked(false);
             cb.set_wallet_count(st.wallet_book.active_count() as i32);
             cb.set_archived_wallet_count(st.wallet_book.archived_count() as i32);
             cb.set_wallet_archived(false);
@@ -1743,6 +2600,7 @@ fn wallet_row(wallet: &wallets::WalletRecord) -> WalletRow {
         detail: "".into(),
         archived: wallet.archived,
         derived: matches!(wallet.kind, wallets::WalletKind::DeviceSlot),
+        cake_linked: wallet.cake_linked,
     }
 }
 
@@ -1752,6 +2610,25 @@ fn model_from_strings(values: Vec<String>) -> ModelRc<SharedString> {
         .map(SharedString::from)
         .collect::<Vec<_>>();
     ModelRc::new(VecModel::from(values))
+}
+
+fn address_block_row(address: &str, row: i32) -> Vec<String> {
+    const BLOCKS_PER_ROW: usize = 6;
+    const CHARS_PER_BLOCK: usize = 4;
+
+    let row = usize::try_from(row).unwrap_or(usize::MAX);
+    let mut blocks = address
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(CHARS_PER_BLOCK)
+        .skip(row.saturating_mul(BLOCKS_PER_ROW))
+        .take(BLOCKS_PER_ROW)
+        .map(|chunk| chunk.iter().collect())
+        .collect::<Vec<String>>();
+    if !blocks.is_empty() {
+        blocks.resize(BLOCKS_PER_ROW, String::new());
+    }
+    blocks
 }
 
 fn warm_active_wallet(state: &Arc<Mutex<AppState>>) {
@@ -1797,6 +2674,9 @@ fn select_wallet(
                 set_status(ui, "Archived wallets must be restored before use.");
                 false
             };
+        }
+        if st.pending_ql_wallet_id.as_deref() != Some(id) {
+            st.pending_ql_wallet_id = None;
         }
         st.invalidate_wallet_artifacts();
     }
@@ -2788,6 +3668,23 @@ mod tests {
             normalize_scanned_monero_address(&format!("monero:{address}?tx_amount=1")).unwrap(),
             address
         );
+    }
+
+    #[test]
+    fn formats_monero_addresses_as_four_character_blocks() {
+        let address =
+            "4APTP4HYNScMjNQdwkXCw2fYnVtJas2nxSSpCP3bBzSmKXEbdKjjvyWZCbtyNjaYXSc4RHQgiYtWqWpUpY1qC5KR7sUspfD";
+
+        assert_eq!(
+            address_block_row(address, 0),
+            vec!["4APT", "P4HY", "NScM", "jNQd", "wkXC", "w2fY"]
+        );
+        assert_eq!(
+            address_block_row(address, 3),
+            vec!["iYtW", "qWpU", "pY1q", "C5KR", "7sUs", "pfD"]
+        );
+        assert!(address_block_row(address, 4).is_empty());
+        assert!(address_block_row(address, -1).is_empty());
     }
 
     #[test]

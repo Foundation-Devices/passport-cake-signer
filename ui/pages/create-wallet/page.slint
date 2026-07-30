@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, Icon, NavHeader,
+import { ButtonSection, ContentSection, HeadingLg,
          PageBody, TextMd, BasePage } from "@ui/widgets.slint";
-import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
+import { CakeButton, CakeIcon, CakeNavHeader, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { CreateWalletPageProps } from "./props.slint";
@@ -18,7 +18,7 @@ export component CreateWalletPagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
+            CakeNavHeader {
                 title: "Create wallet";
                 clicked => { Navigate.home-page({ }); }
             }
@@ -34,10 +34,10 @@ export component CreateWalletPagePage inherits Rectangle {
                             height: 88px;
                             border-radius: Size.sz6;
                             background: Cake.surface;
-                            Icon {
+                            CakeIcon {
                                 name: "plus";
                                 size: IconSize.px64;
-                                color: Cake.blue;
+                                icon-color: Cake.blue;
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
                             }

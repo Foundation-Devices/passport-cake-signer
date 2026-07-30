@@ -1,29 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { HeadingLg, IconButton, OverlayMenu, PopupMenuItem,
+import { ButtonSection, HeadingLg, OverlayMenu,
          ScrollBody, TextMd, BasePage } from "@ui/widgets.slint";
 import { Importance, Size } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { HomePageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { Cake } from "../../cake-theme.slint";
-import { CakeListTile } from "../../cake-widgets.slint";
-
-component CakeLogoMark inherits Rectangle {
-    in property <length> mark-size: 118px;
-    width: mark-size;
-    height: mark-size;
-    background: #00000000;
-
-    Image {
-        source: @image-url("../../../assets/icons/cake-logo.png");
-        width: parent.width;
-        height: parent.height;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-    }
-}
+import { CakeButton, CakeIconButton, CakeListTile,
+         CakePopupMenuItem } from "../../cake-widgets.slint";
 
 export component HomePagePage inherits Rectangle {
     in property <HomePageProps> props;
@@ -48,10 +34,9 @@ export component HomePagePage inherits Rectangle {
                     width: parent.width;
                     height: parent.height;
                 }
-                IconButton {
+                CakeIconButton {
                     icon: "ellipsis";
                     size: Size.sz10;
-                    importance: Importance.normal;
                     x: parent.width - self.width - Size.sz6;
                     y: (parent.height - self.height) / 2;
                     clicked => { is-menu-open = !is-menu-open; }
@@ -63,27 +48,19 @@ export component HomePagePage inherits Rectangle {
                 p-y: Size.sz4;
 
                 VerticalLayout {
-                    spacing: Size.sz4;
-
-                    if Callbacks.wallet-count <= 1: HorizontalLayout {
-                        alignment: center;
-                        CakeLogoMark {
-                            mark-size: 118px;
-                        }
-                    }
+                    spacing: Size.sz3;
 
                     if Callbacks.wallet-count == 0: TextMd {
-                        text: "Import or create a wallet.";
+                        text: "Restore or create a Monero wallet.";
                         color: Cake.on-surface-dim;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
 
-                    if Callbacks.wallet-count == 1: TextMd {
-                        text: "Open the wallet to sign transactions or pair with Cake.";
-                        color: Cake.on-surface-dim;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+                    if Callbacks.wallet-count > 0: TextMd {
+                        text: "Monero Wallets";
+                        color: Cake.on-surface-strong;
+                        bold: true;
                     }
 
                     for wallet in Callbacks.wallets: CakeListTile {
@@ -91,7 +68,9 @@ export component HomePagePage inherits Rectangle {
                         subtitle: "";
                         icon: wallet.archived ? "archive" : (wallet.derived ? "device" : "import");
                         archived: wallet.archived;
-                        chip-color: wallet.archived ? Cake.surface-alt : (wallet.derived ? Cake.surface-high : Cake.monero);
+                        show-monero-network: !wallet.archived;
+                        cake-linked: wallet.cake-linked;
+                        chip-color: wallet.archived ? Cake.surface-alt : (wallet.derived ? Cake.wallet-list-icon : Cake.monero);
                         icon-color: wallet.archived ? Cake.on-surface-dim : (wallet.derived ? Cake.blue-soft : Cake.on-monero);
                         clicked => {
                             if Callbacks.select-wallet(wallet.id) {
@@ -100,7 +79,32 @@ export component HomePagePage inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: Size.sz4; }
+                    Rectangle { height: Size.sz2; }
+                }
+            }
+
+            ButtonSection {
+                spacing: Size.sz3;
+                padding-left: Size.sz6;
+                padding-right: Size.sz6;
+                padding-bottom: Size.sz4;
+
+                CakeButton {
+                    label: "Restore Wallet";
+                    icon: "import";
+                    importance: Importance.normal;
+                    clicked => {
+                        Navigate.import-wallet-page({ });
+                    }
+                }
+
+                CakeButton {
+                    label: "Create New Wallet";
+                    icon: "plus";
+                    importance: Importance.primary;
+                    clicked => {
+                        Navigate.create-wallet-page({ });
+                    }
                 }
             }
         }
@@ -111,26 +115,20 @@ export component HomePagePage inherits Rectangle {
             touched-off => {
                 is-menu-open = false;
             }
-            PopupMenuItem {
-                label: "Import wallet";
-                icon: "import";
+            if Callbacks.ql-cake-paired: CakePopupMenuItem {
+                label: "Forget Cake connection";
+                icon: "bluetooth";
                 first: true;
+                height: Size.sz16 + Size.sz6;
                 clicked => {
                     is-menu-open = false;
-                    Navigate.import-wallet-page({ });
+                    Callbacks.disconnect-quantum-link();
                 }
             }
-            PopupMenuItem {
-                label: "Create wallet";
-                icon: "plus";
-                clicked => {
-                    is-menu-open = false;
-                    Navigate.create-wallet-page({ });
-                }
-            }
-            PopupMenuItem {
+            CakePopupMenuItem {
                 label: "Archived wallets";
                 icon: "archive";
+                first: !Callbacks.ql-cake-paired;
                 enabled: Callbacks.archived-wallet-count > 0;
                 last: true;
                 clicked => {

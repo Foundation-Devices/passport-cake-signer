@@ -2,7 +2,7 @@
   "app.name": "Cake",
   "home.title": "Cake Wallet Signer",
   "home.subtitle": "This Passport holds your Monero spend key offline. Cake Wallet on your phone builds the transaction; bring it here to sign.",
-  "home.pairQr": "Pair with Cake",
+  "home.pairQr": "Export watch-only QR",
   "home.signTransaction": "Sign Transaction",
   "menu.viewSeed": "View seed",
   "seed.title": "Recovery seed",

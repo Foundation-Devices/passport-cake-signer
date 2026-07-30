@@ -27,7 +27,9 @@ const SLOT_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-slot.v1";
 const STORE_AEAD_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-store.aead.v1";
 const STORE_NONCE_DOMAIN: &[u8] = b"foundation.cake-signer.wallet-store.nonce.v1";
 const MAX_WALLETS: usize = 16;
-const MAX_LABEL_CHARS: usize = 40;
+// Cake uses wallet names as filenames, so keep Prime labels within Cake's
+// cross-platform wallet-name contract.
+const MAX_LABEL_CHARS: usize = 33;
 const MAX_RECORD_ID_BYTES: usize = 96;
 const MAX_SYNCED_OUTPUTS: usize = 8_192;
 
@@ -59,6 +61,11 @@ pub struct WalletRecord {
     pub restore_height: u64,
     #[serde(default)]
     pub archived: bool,
+    /// True once this wallet has participated in an authenticated Cake
+    /// QuantumLink flow. Transport pairing is device-wide, but this flag keeps
+    /// wallet-detail connection state scoped to the wallet Cake actually uses.
+    #[serde(default)]
+    pub cake_linked: bool,
     #[serde(default)]
     pub sealed_phrase: Option<SealedPhrase>,
     #[serde(default)]
@@ -78,6 +85,7 @@ impl WalletRecord {
             slot,
             restore_height,
             archived: false,
+            cake_linked: false,
             sealed_phrase: None,
             synced_outputs: BTreeMap::new(),
         }
@@ -234,6 +242,31 @@ impl WalletBook {
         self.records.iter().filter(|r| r.archived).count()
     }
 
+    pub fn set_cake_linked(&mut self, id: &str, linked: bool) -> Result<bool> {
+        let wallet = self
+            .records
+            .iter_mut()
+            .find(|wallet| wallet.id == id)
+            .ok_or_else(|| Error::Seed("wallet not found".into()))?;
+        if linked && wallet.archived {
+            return Err(Error::Seed(
+                "archived wallet cannot be linked to Cake".into(),
+            ));
+        }
+        let changed = wallet.cake_linked != linked;
+        wallet.cake_linked = linked;
+        Ok(changed)
+    }
+
+    pub fn clear_cake_links(&mut self) -> bool {
+        let mut changed = false;
+        for wallet in &mut self.records {
+            changed |= wallet.cake_linked;
+            wallet.cake_linked = false;
+        }
+        changed
+    }
+
     pub fn can_archive_selected(&self) -> bool {
         self.selected()
             .map(|r| r.id != slot_id(0) && !r.archived)
@@ -372,6 +405,7 @@ impl WalletBook {
             slot: 0,
             restore_height: imported_restore_height,
             archived: false,
+            cake_linked: false,
             sealed_phrase: Some(sealed_phrase),
             synced_outputs: BTreeMap::new(),
         };
@@ -441,7 +475,7 @@ fn sanitize_label(label: &str, fallback: String) -> String {
     let cleaned = label
         .trim()
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_'))
         .take(MAX_LABEL_CHARS)
         .collect::<String>();
     if cleaned.is_empty() {
@@ -750,6 +784,16 @@ mod tests {
     }
 
     #[test]
+    fn wallet_names_follow_cake_filename_rules() {
+        let mut book = WalletBook::new(123);
+        let renamed = book
+            .rename_selected(" Travel/Wallet🙂_2026-with-a-very-long-suffix ")
+            .unwrap();
+        assert_eq!(renamed.label, "TravelWallet_2026-with-a-very-lon");
+        assert_eq!(renamed.label.chars().count(), MAX_LABEL_CHARS);
+    }
+
+    #[test]
     fn device_slots_reuse_lowest_missing_index() {
         let mut book = WalletBook::new(123);
         assert_eq!(book.add_device_slot(123).unwrap().id, "slot-1");
@@ -812,6 +856,49 @@ mod tests {
         assert_eq!(entry.internal_idx, 4);
         assert_eq!(entry.major, 5);
         assert_eq!(entry.minor, 6);
+    }
+
+    #[test]
+    fn cake_link_state_is_scoped_to_each_wallet() {
+        let mut book = WalletBook::new(123);
+        book.set_cake_linked("slot-0", true).unwrap();
+        book.add_device_slot(123).unwrap();
+        book.set_cake_linked("slot-1", true).unwrap();
+
+        assert!(book.selected().unwrap().cake_linked);
+        assert!(
+            book.records
+                .iter()
+                .find(|wallet| wallet.id == "slot-0")
+                .unwrap()
+                .cake_linked
+        );
+
+        book.set_cake_linked("slot-1", false).unwrap();
+        assert!(!book.selected().unwrap().cake_linked);
+        assert!(
+            book.records
+                .iter()
+                .find(|wallet| wallet.id == "slot-0")
+                .unwrap()
+                .cake_linked
+        );
+
+        let restored = from_json(&to_json(&book).unwrap(), 123).unwrap();
+        assert!(!restored.selected().unwrap().cake_linked);
+        assert!(
+            restored
+                .records
+                .iter()
+                .find(|wallet| wallet.id == "slot-0")
+                .unwrap()
+                .cake_linked
+        );
+
+        let mut cleared = restored;
+        assert!(cleared.clear_cake_links());
+        assert!(cleared.records.iter().all(|wallet| !wallet.cake_linked));
+        assert!(!cleared.clear_cake_links());
     }
 
     #[test]

@@ -1,9 +1,276 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Icon, TextLg, TextMd, TextSm, TimerLoader } from "@ui/widgets.slint";
+import { HeadingMd, TextLg, TextMd, TextSm, TimerLoader } from "@ui/widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Cake } from "cake-theme.slint";
+
+export component CakeIcon inherits Rectangle {
+    in property <string> name;
+    in property <length> size: IconSize.px24;
+    in property <brush> icon-color: Cake.on-surface;
+
+    width: size;
+    height: size;
+    background: #00000000;
+
+    if name == "alert": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/alert.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "archive": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/archive.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "arrow-right": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/arrow-right.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "bluetooth": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/bluetooth.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "cake": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/cake.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "check": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/check.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "chevron-left": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/chevron-left.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "chevron-right": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/chevron-right.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "delete": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/delete.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "device": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/device.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "edit": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/edit.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "ellipsis": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/ellipsis.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "eye": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/eye.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "file": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/file.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "import": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/import.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "info": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/info.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "plus": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/plus.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+
+    if name == "scan-qr": Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../assets/icons/ui/scan-qr.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component CakeIconButton inherits Rectangle {
+    in property <string> icon;
+    in property <length> size: Size.sz10;
+    in property <length> icon-size: Size.sz8;
+    in property <brush> icon-color: Cake.on-surface;
+    callback clicked;
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: touch.pressed ? Cake.surface-high : #00000000;
+
+    CakeIcon {
+        name: root.icon;
+        size: root.icon-size;
+        icon-color: root.icon-color;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CakeNavHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> left-icon: "chevron-left";
+    in property <string> right-icon: "";
+    callback clicked;
+    callback right-clicked;
+
+    height: Size.sz16;
+
+    HeadingMd {
+        text: root.title;
+        color: Cake.on-surface;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        x: Size.sz16;
+        width: parent.width - Size.sz16 * 2;
+        height: parent.height;
+    }
+
+    CakeIconButton {
+        icon: root.left-icon;
+        x: Size.sz8;
+        y: (parent.height - self.height) / 2;
+        clicked => { root.clicked(); }
+    }
+
+    if root.right-icon != "": CakeIconButton {
+        icon: root.right-icon;
+        x: parent.width - self.width - Size.sz8;
+        y: (parent.height - self.height) / 2;
+        clicked => { root.right-clicked(); }
+    }
+}
+
+export component CakePopupMenuItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> enabled: true;
+    in property <bool> first: false;
+    in property <bool> last: false;
+    callback clicked;
+
+    height: Size.sz16;
+    border-top-left-radius: first ? Size.sz6 : 0px;
+    border-top-right-radius: first ? Size.sz6 : 0px;
+    border-bottom-left-radius: last ? Size.sz6 : 0px;
+    border-bottom-right-radius: last ? Size.sz6 : 0px;
+    background: touch.pressed ? Cake.surface-card-pressed-solid : #00000000;
+
+    HorizontalLayout {
+        height: parent.height;
+        spacing: Size.sz4;
+        padding: Size.sz4;
+
+        TextMd {
+            text: root.label;
+            color: root.enabled ? Cake.on-surface : Cake.on-surface-dim;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            wrap: word-wrap;
+        }
+
+        if root.icon != "": VerticalLayout {
+            width: Size.sz6;
+            alignment: center;
+
+            CakeIcon {
+                name: root.icon;
+                icon-color: root.enabled ? Cake.on-surface : Cake.on-surface-dim;
+            }
+        }
+    }
+
+    if !root.last: Rectangle {
+        x: Size.sz4;
+        y: parent.height - 1px;
+        width: parent.width - Size.sz8;
+        height: 1px;
+        background: Cake.divider;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
 
 export component CakeButton inherits Rectangle {
     in property <string> id;
@@ -18,7 +285,7 @@ export component CakeButton inherits Rectangle {
     callback clicked(string);
 
     height: Size.sz15;
-    border-radius: Size.sz6;
+    border-radius: Cake.cta-radius;
     clip: true;
     background: bg-color;
 
@@ -28,7 +295,7 @@ export component CakeButton inherits Rectangle {
     private property <brush> bg-color: !enabled ? Cake.surface-low
         : negative ? Cake.danger-bg
         : primary ? (pressed ? Cake.blue-dim : Cake.blue)
-        : (pressed ? Cake.surface-card-pressed : Cake.surface-card);
+        : (pressed ? Cake.surface-card-pressed-solid : Cake.surface-card-solid);
     private property <brush> content-color: !enabled ? Cake.on-surface-dim
         : negative ? Cake.danger
         : primary ? Cake.on-blue
@@ -51,10 +318,10 @@ export component CakeButton inherits Rectangle {
 
         if !loading && icon != "": VerticalLayout {
             alignment: center;
-            Icon {
+            CakeIcon {
                 name: icon;
                 horizontal-stretch: 1;
-                color: label-color;
+                icon-color: label-color;
             }
         }
 
@@ -81,10 +348,8 @@ export component CakeCard inherits Rectangle {
     in property <bool> pressed: false;
     in property <bool> archived: false;
 
-    background: archived ? Cake.surface-low : (pressed ? Cake.surface-card-pressed : Cake.surface-card);
-    border-radius: Size.sz3;
-    border-width: 1px;
-    border-color: Cake.divider;
+    background: archived ? Cake.surface-low : (pressed ? Cake.surface-card-pressed-solid : Cake.surface-card-solid);
+    border-radius: Cake.cta-radius;
     clip: true;
 }
 
@@ -100,26 +365,40 @@ export component CakeIconChip inherits Rectangle {
     border-radius: chip-size / 2;
     background: chip-color;
 
-    Icon {
+    CakeIcon {
         name: icon;
         size: icon-size;
-        color: icon-color;
+        icon-color: icon-color;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
     }
 }
 
-export component CakeListTile inherits CakeCard {
+export component CakeListTile inherits Rectangle {
     in property <string> title;
     in property <string> subtitle: "";
     in property <string> icon;
     in property <brush> chip-color: Cake.blue;
     in property <brush> icon-color: Cake.on-blue;
     in property <bool> show-chevron: true;
+    in property <bool> archived: false;
+    in property <bool> grouped: false;
+    in property <bool> show-divider: false;
+    in property <bool> cake-linked: false;
+    in property <bool> show-monero-network: false;
     callback clicked;
 
+    // Prime is 480px wide and wallet lists use 24px horizontal gutters.
+    // Keep this explicit, as KeyOS LineCard does, to avoid Image preferred-size
+    // binding loops when the platform-rendered card determines its source.
+    width: 432px;
     height: subtitle == "" ? 78px : 92px;
-    pressed: touch.pressed;
+    background: grouped
+        ? (touch.pressed ? Cake.wallet-list-card-pressed : #00000000)
+        : root.archived ? Cake.surface-low
+        : (touch.pressed ? Cake.wallet-list-card-pressed : Cake.wallet-list-card);
+    border-radius: grouped ? 0px : Cake.list-card-radius;
+    clip: true;
     opacity: root.archived ? 0.68 : 1;
 
     HorizontalLayout {
@@ -130,7 +409,15 @@ export component CakeListTile inherits CakeCard {
         VerticalLayout {
             width: Size.sz11;
             alignment: center;
-            CakeIconChip {
+
+            if root.show-monero-network: Image {
+                source: @image-url("../assets/icons/monero-network.svg");
+                width: Size.sz10;
+                height: Size.sz10;
+                image-fit: contain;
+            }
+
+            if !root.show-monero-network: CakeIconChip {
                 icon: root.icon;
                 chip-color: root.archived ? Cake.surface-alt : root.chip-color;
                 icon-color: root.archived ? Cake.on-surface-dim : root.icon-color;
@@ -156,13 +443,42 @@ export component CakeListTile inherits CakeCard {
         }
 
         if show-chevron: VerticalLayout {
-            width: Size.sz6;
+            width: cake-linked ? Size.sz13 : Size.sz6;
             alignment: center;
-            Icon {
-                name: "chevron-right";
-                color: Cake.on-surface-soft;
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: Size.sz2;
+
+                if cake-linked: Rectangle {
+                    width: Size.sz7;
+                    height: Size.sz7;
+                    border-radius: self.width / 2;
+                    background: Cake.success-bg;
+
+                    CakeIcon {
+                        name: "bluetooth";
+                        size: IconSize.px16;
+                        icon-color: Cake.success;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                CakeIcon {
+                    name: "chevron-right";
+                    icon-color: Cake.on-surface-soft;
+                }
             }
         }
+    }
+
+    if show-divider: Rectangle {
+        x: Size.sz4 + Size.sz11 + Size.sz3;
+        y: parent.height - 1px;
+        width: parent.width - self.x - Size.sz4;
+        height: 1px;
+        background: Cake.divider;
     }
 
     touch := TouchArea {
@@ -197,9 +513,9 @@ export component CakeStatusBanner inherits Rectangle {
         VerticalLayout {
             width: Size.sz6;
             alignment: center;
-            Icon {
+            CakeIcon {
                 name: "alert";
-                color: danger ? Cake.danger : Cake.warning;
+                icon-color: danger ? Cake.danger : Cake.warning;
                 size: IconSize.px24;
             }
         }
@@ -239,9 +555,9 @@ export component CakeSlideToSign inherits Rectangle {
     in property <bool> signing: false;
     callback activated;
 
-    border-radius: Size.sz6;
+    border-radius: Cake.cta-radius;
     height: Size.sz16 + (Size.sz1 * 2);
-    background: Cake.surface-card;
+    background: Cake.surface-card-solid;
     border-width: 1px;
     border-color: Cake.divider;
     clip: true;
@@ -282,7 +598,7 @@ export component CakeSlideToSign inherits Rectangle {
         y: Size.sz1;
         width: thumb-width;
         height: inner-height;
-        border-radius: Size.sz6;
+        border-radius: Cake.cta-radius;
         background: Cake.surface-low;
         opacity: signing ? 0 : 1;
     }
@@ -292,30 +608,35 @@ export component CakeSlideToSign inherits Rectangle {
         y: Size.sz1;
         width: thumb-width;
         height: inner-height;
-        border-radius: Size.sz6;
-        background: Cake.monero-card;
+        border-radius: Cake.cta-radius;
+        background: Cake.monero-card-solid;
         opacity: signing ? 0 : 1;
 
-        HorizontalLayout {
-            alignment: center;
-            spacing: Size.sz2;
-            padding-left: Size.sz3;
-            padding-right: Size.sz3;
+        Rectangle {
+            width: 84px;
+            height: 32px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
 
-            Icon {
+            CakeIcon {
                 name: "arrow-right";
-                color: Cake.on-monero;
+                icon-color: Cake.on-monero;
                 size: IconSize.px24;
                 width: IconSize.px24;
                 height: IconSize.px24;
-                horizontal-stretch: 0;
+                x: 0px;
+                y: (parent.height - self.height) / 2 + 2px;
             }
 
             TextMd {
                 text: "Sign";
                 color: Cake.on-monero;
                 bold: true;
-                horizontal-stretch: 0;
+                x: 32px;
+                y: 0px;
+                width: parent.width - self.x;
+                height: parent.height;
+                horizontal-alignment: left;
                 vertical-alignment: center;
             }
         }

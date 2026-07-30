@@ -12,7 +12,11 @@ export global Cake {
     // Monero accent (this is a Monero wallet app).
     out property <brush> monero: #FF6600;
     out property <brush> monero-deep: #F35A24;
-    out property <brush> monero-card: @linear-gradient(180deg, #FF6600 0%, #F35A24 100%);
+    // Exact Cake mobile Monero balance-card gradient.
+    out property <brush> monero-card: @linear-gradient(180deg, #FF5900 0%, #E62E00 100%);
+    // Solid fallback for Prime's embedded renderer, which does not reliably
+    // clip gradient-backed rectangles to rounded corners.
+    out property <brush> monero-card-solid: #F4510C;
 
     // Surfaces (Cake dark theme).
     out property <brush> background: #1B284A;
@@ -22,12 +26,20 @@ export global Cake {
     out property <brush> surface: #24335B;
     out property <brush> surface-alt: #2A3E73;
     out property <brush> surface-high: #334C8C;
+    // Subtle wallet-row contrast, matched to Cake's transaction list treatment.
+    out property <brush> wallet-list-card: #233156;
+    out property <brush> wallet-list-card-pressed: #2A3A62;
+    out property <brush> wallet-list-icon: #394B72;
     out property <brush> surface-card: @linear-gradient(180deg, #2B3A67 0%, #1C2A4F 100%);
     out property <brush> surface-card-pressed: @linear-gradient(180deg, #334C8C 0%, #24335B 100%);
+    // Solid button variants preserve rounded clipping on Prime's renderer.
+    out property <brush> surface-card-solid: #2B3A67;
+    out property <brush> surface-card-pressed-solid: #334C8C;
     out property <brush> divider: #2A3E73;
 
     // Status.
     out property <brush> success: #12A439;
+    out property <brush> success-bg: #12A43924;
     out property <brush> warning: #FFB84E;
     out property <brush> warning-bg: #4B3351;
     out property <brush> danger: #FFB4AB;
@@ -42,4 +54,9 @@ export global Cake {
     out property <brush> on-monero: #1A1A1A;
     out property <brush> white-soft: #FFFFFF66;
     out property <brush> overlay: #0F1A36E6;
+
+    // Geometry.
+    out property <length> cta-radius: 12px;
+    out property <length> list-card-radius: 20px;
+    out property <length> monero-card-radius: 18px;
 }

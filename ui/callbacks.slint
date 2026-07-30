@@ -11,6 +11,7 @@ export struct WalletRow {
     detail: string,
     archived: bool,
     derived: bool,
+    cake-linked: bool,
 }
 
 export global Callbacks {
@@ -31,6 +32,28 @@ export global Callbacks {
     // The pairing payload: {label, version, primaryAddress, privateViewKey,
     // restoreHeight} JSON, rendered as a single static QR.
     in-out property <string> pair-json;
+
+    // --- QuantumLink transport --------------------------------------------
+    // Device-level Passport Prime pairing data for Cake's hardware-wallet
+    // flow. Cake scans ql-static-qr first to connect over BLE, then ql-identity-
+    // parts to complete QuantumLink pairing.
+    in-out property <string> ql-static-qr;
+    in-out property <[string]> ql-identity-parts;
+    in-out property <bool> ql-bt-connected;
+    in-out property <bool> ql-paired;
+    in-out property <bool> ql-live;
+    // Device-level pairing with Cake, even when the live BLE session is down.
+    in-out property <bool> ql-cake-paired;
+    // True only when the live device-level peer is Cake Wallet. Do not use
+    // ql-paired alone: it can refer to Envoy or a stale phone pairing.
+    in-out property <bool> ql-cake-ready;
+    in-out property <bool> ql-pairing-resetting;
+    in-out property <string> ql-paired-device-name;
+    in-out property <string> ql-status-text;
+    callback begin-quantum-link-pairing();
+    callback cancel-quantum-link-wallet-enrollment();
+    callback unlink-active-wallet-from-cake() -> bool;
+    callback disconnect-quantum-link();
 
     // Animated UR frames for the just-signed tx (ur_type "xmr-txsigned").
     // DynamicQrCode calls this with the max QR size; we return the parts model.
@@ -72,6 +95,8 @@ export global Callbacks {
     callback clear-verify-address();
     callback verify-address-scan();
     callback verify-address-index(string, string) -> bool;
+    callback confirm-quantum-link-address();
+    callback reject-quantum-link-address();
     in-out property <string> wallet-id;
     in-out property <string> wallet-label;
     in-out property <string> wallet-kind;
@@ -83,6 +108,9 @@ export global Callbacks {
     in-out property <[WalletRow]> wallets;
     in-out property <[WalletRow]> archived-wallets;
     in-out property <bool> wallet-derived;
+    // Wallet-scoped Cake association. QuantumLink itself is paired at the
+    // device level, so UI must combine this with ql-paired.
+    in-out property <bool> wallet-cake-linked;
     in-out property <int> wallet-count;
     in-out property <int> archived-wallet-count;
     in-out property <bool> wallet-archived;
@@ -94,6 +122,8 @@ export global Callbacks {
     in-out property <string> verify-title;
     in-out property <string> verify-detail;
     in-out property <string> verify-address;
+    in-out property <bool> verify-via-quantum-link;
+    in-out property <bool> verify-confirming;
 
     // --- Signing flow -----------------------------------------------------
     // Import an unsigned_monero_tx file (built by the Cake mobile watch-only
@@ -103,12 +133,19 @@ export global Callbacks {
     // Sign the loaded unsigned tx with the app-seed spend key and cache the
     // signed_monero_tx for QR display. Saving to file is explicit.
     callback sign-transaction();
+    callback cancel-transaction-review();
+    callback finish-transaction-review();
+
+    // Split a Monero address into one row of four 4-character blocks for the
+    // review UI. The Rust implementation keeps address formatting byte-safe
+    // and reusable for both source and destination addresses.
+    pure callback format-address-row(string, int) -> [string];
 
     // Write the cached signed_monero_tx through the file picker.
     callback save-signed-tx();
 
     // --- Review properties (set by Rust after import) ---------------------
-    in-out property <string> primary-address;       // truncated, for display
+    in-out property <string> primary-address;       // full source wallet address
     in-out property <string> amount-xmr;            // real amount sent (excl change), formatted
     in-out property <string> change-xmr;            // change returned to this wallet, formatted
     in-out property <string> fee-xmr;               // network fee, formatted ("—" until computed)
@@ -121,5 +158,6 @@ export global Callbacks {
     in-out property <bool>   tx-loaded;             // gate the Sign button
     in-out property <bool>   signed-ok;             // true only if signing actually succeeded
     in-out property <bool>   signing;               // true while the signer thread is working
+    in-out property <bool>   tx-via-quantum-link;   // response returns directly to Cake over QL
     in-out property <string> status-text;           // error / progress line
 }

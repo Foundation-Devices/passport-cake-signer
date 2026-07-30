@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, Icon, NavHeader,
+import { ButtonSection, ContentSection, HeadingLg,
          PageBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
+import { CakeButton, CakeIcon, CakeNavHeader, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { DeleteWalletConfirmPageProps } from "./props.slint";
@@ -19,7 +19,7 @@ export component DeleteWalletConfirmPagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
+            CakeNavHeader {
                 title: "Delete wallet";
                 clicked => { Navigate.wallet-detail-page({ }); }
             }
@@ -35,10 +35,10 @@ export component DeleteWalletConfirmPagePage inherits Rectangle {
                             height: 88px;
                             border-radius: Size.sz6;
                             background: Cake.surface;
-                            Icon {
+                            CakeIcon {
                                 name: "alert";
                                 size: IconSize.px64;
-                                color: Cake.warning;
+                                icon-color: Cake.warning;
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
                             }

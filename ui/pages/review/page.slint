@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingMd, AppHeader, TextLg, TextMd, TextSm, BasePage, PageBody, Panel } from "@ui/widgets.slint";
-import { CakeButton, CakeCard, CakeSlideToSign, CakeStatusBanner } from "../../cake-widgets.slint";
-import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
+import { ButtonSection, AppHeader, ScrollBody, HeadingXl, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { CakeButton, CakeCard, CakeIcon, CakeSlideToSign, CakeStatusBanner } from "../../cake-widgets.slint";
+import { Size, Importance, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { ReviewPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -28,8 +28,7 @@ component Row inherits Rectangle {
             color: Cake.on-surface-dim;
             vertical-alignment: center;
             horizontal-stretch: 0;
-            width: 124px;
-            overflow: elide;
+            width: 152px;
         }
 
         TextMd {
@@ -42,21 +41,46 @@ component Row inherits Rectangle {
     }
 }
 
+component AddressBlockLine inherits Rectangle {
+    in property <string> address;
+    in property <int> row-index;
+    private property <[string]> blocks: Callbacks.format-address-row(address, row-index);
+
+    visible: blocks.length > 0;
+    height: root.visible ? 36px : 0px;
+    background: #00000000;
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: Size.sz2;
+
+        for block[index] in blocks: TextSm {
+            text: block;
+            horizontal-stretch: 1;
+            color: Math.mod(row-index * 6 + index, 2) == 0 ? Cake.on-surface-strong : Cake.on-surface-soft;
+            bold: Math.mod(row-index * 6 + index, 2) == 0;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: clip;
+        }
+    }
+}
+
 component AddressRow inherits Rectangle {
     in property <string> label;
     in property <string> value;
-    callback clicked;
+    in property <string> detail: "";
 
-    min-height: Size.sz15;
+    height: detail == "" ? 208px : 252px;
     border-radius: Size.sz3;
-    background: Cake.surface-card;
+    background: Cake.surface-card-solid;
     clip: true;
 
     VerticalLayout {
         padding-left: Size.sz4;
         padding-right: Size.sz4;
         padding-top: Size.sz3;
-        padding-bottom: Size.sz3;
+        padding-bottom: Size.sz5;
         spacing: Size.sz1;
 
         TextSm {
@@ -65,205 +89,323 @@ component AddressRow inherits Rectangle {
             overflow: elide;
         }
 
-        TextMd {
-            text: value;
-            color: Cake.on-surface;
+        AddressBlockLine { address: value; row-index: 0; }
+        AddressBlockLine { address: value; row-index: 1; }
+        AddressBlockLine { address: value; row-index: 2; }
+        AddressBlockLine { address: value; row-index: 3; }
+
+        if detail != "": Rectangle {
+            height: Size.sz2;
+        }
+
+        if detail != "": TextSm {
+            text: detail;
+            color: Cake.on-surface-dim;
+            horizontal-alignment: right;
             wrap: word-wrap;
         }
     }
+}
 
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
+component SigningProgress inherits BasePage {
+    background: Cake.background;
 
-    states [
-        pressed when touch.pressed: {
-            root.background: Cake.surface-card-pressed;
+    VerticalLayout {
+        padding-left: Size.sz6;
+        padding-right: Size.sz6;
+        padding-top: Size.sz16;
+        padding-bottom: Size.sz8;
+        spacing: Size.sz6;
+        alignment: center;
+
+        Rectangle {
+            width: 100%;
+            height: 160px;
+            background: #00000000;
+
+            Rectangle {
+                width: 144px;
+                height: 144px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: Cake.surface-high;
+                border-width: 2px;
+                border-color: Cake.blue-soft;
+
+                CakeIcon {
+                    name: "bluetooth";
+                    size: IconSize.px48;
+                    icon-color: Cake.blue-soft;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
         }
-    ]
+
+        TextLg {
+            text: "Signing transaction";
+            color: Cake.on-surface-strong;
+            bold: true;
+            horizontal-alignment: center;
+        }
+
+        TextMd {
+            text: "Creating the Monero signature and returning it to Cake Wallet over QuantumLink.";
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        TextSm {
+            text: "Keep both devices nearby. This can take several seconds.";
+            color: Cake.on-surface-soft;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component SigningSuccess inherits BasePage {
+    background: Cake.background;
+
+    VerticalLayout {
+        VerticalLayout {
+            padding-left: Size.sz6;
+            padding-right: Size.sz6;
+            padding-top: Size.sz12;
+            padding-bottom: Size.sz6;
+            spacing: Size.sz6;
+            alignment: center;
+
+            Rectangle {
+                width: 100%;
+                height: 190px;
+                background: #00000000;
+
+                Image {
+                    width: 195px;
+                    height: 180px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../../assets/icons/birthday-cake.png");
+                    image-fit: contain;
+                }
+            }
+
+            TextLg {
+                text: "Signature complete";
+                color: Cake.on-surface-strong;
+                bold: true;
+                horizontal-alignment: center;
+            }
+
+            TextMd {
+                text: "The signed transaction was returned to Cake Wallet over QuantumLink.";
+                color: Cake.on-surface-dim;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            TextMd {
+                text: "Ready for Cake Wallet to broadcast.";
+                color: Cake.on-surface;
+                horizontal-alignment: center;
+            }
+
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        ButtonSection {
+            padding-left: Size.sz6;
+            padding-right: Size.sz6;
+            padding-bottom: Size.sz4;
+
+            CakeButton {
+                label: TR2.lookup(TrId.Done);
+                importance: Importance.primary;
+                clicked => {
+                    Callbacks.finish-transaction-review();
+                    Navigate.wallet-detail-page({ replace: true });
+                }
+            }
+        }
+    }
 }
 
 export component ReviewPagePage inherits Rectangle {
     in property <ReviewPageProps> props;
-    property <bool> is-address-open: false;
-    property <string> selected-dest-address: "";
+    property <int> review-step: 0;
     property <bool> observed-signed-ok: Callbacks.signed-ok;
     background: Cake.background;
 
     changed observed-signed-ok => {
-        if (observed-signed-ok) {
+        if (observed-signed-ok && !Callbacks.tx-via-quantum-link) {
             Navigate.signed-qr-page({ });
         }
     }
 
-    BasePage {
+    if !Callbacks.signing && !(Callbacks.signed-ok && Callbacks.tx-via-quantum-link): BasePage {
         background: Cake.background;
 
         VerticalLayout {
             AppHeader { title: TR2.lookup(TrId.ReviewTitle); side-padding: Size.sz6; }
-            PageBody {
+            ScrollBody {
+                p-x: Size.sz6;
                 p-y: Size.sz3;
 
-                Rectangle {
-                    vertical-stretch: 1;
-                    clip: true;
-
-                    Flickable {
-                        width: parent.width;
-                        height: parent.height;
-
-                        ContentSection {
-                            width: parent.width;
-                            spacing: Size.sz2;
-
-                            Rectangle {
-                                background: Cake.monero-card;
-                                border-radius: Size.sz6;
-                                height: 104px;
-                                clip: true;
-                                VerticalLayout {
-                                    padding: Size.sz5;
-                                    spacing: Size.sz2;
-                                    TextMd { text: TR2.lookup(TrId.ReviewSending); color: Cake.on-monero; }
-                                    TextLg {
-                                        text: Callbacks.amount-xmr + " XMR";
-                                        color: Cake.on-monero;
-                                        bold: true;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            for recipient[index] in Callbacks.dest-address-labels: AddressRow {
-                                label: index == 0 ? TR2.lookup(TrId.ReviewTo) : "Additional recipient";
-                                value: recipient;
-                                clicked => {
-                                    selected-dest-address = Callbacks.dest-addresses[index];
-                                    is-address-open = true;
-                                }
-                            }
-
-                            CakeCard {
-                                VerticalLayout {
-                                    padding-top: Size.sz2;
-                                    padding-bottom: Size.sz2;
-                                    Row { label: TR2.lookup(TrId.ReviewChange);  value: Callbacks.change-xmr + " XMR"; }
-                                    Row {
-                                        label: TR2.lookup(TrId.ReviewFee);
-                                        value: Callbacks.fee-xmr == "—" ? Callbacks.fee-xmr : Callbacks.fee-xmr + " XMR";
-                                    }
-                                    Row { label: TR2.lookup(TrId.ReviewOutputs); value: Callbacks.output-count; }
-                                }
-                            }
-
-                            CakeCard {
-                                VerticalLayout {
-                                    padding: Size.sz4;
-                                    spacing: Size.sz2;
-                                    TextSm {
-                                        text: TR2.lookup(TrId.ReviewFrom);
-                                        color: Cake.on-surface-dim;
-                                        overflow: elide;
-                                    }
-                                    TextMd {
-                                        text: Callbacks.primary-address;
-                                        color: Cake.on-surface;
-                                        horizontal-alignment: right;
-                                        overflow: elide;
-                                    }
-                                    if Callbacks.tx-account-info != "": TextSm {
-                                        text: Callbacks.tx-account-info;
-                                        color: Cake.on-surface-dim;
-                                        horizontal-alignment: right;
-                                        wrap: word-wrap;
-                                    }
-                                }
-                            }
-
-                            CakeStatusBanner {
-                                text: Callbacks.status-text;
-                                danger: !Callbacks.tx-loading;
-                            }
-                        }
-                    }
-                }
-
-                ButtonSection {
-                    CakeButton {
-                        label: TR2.lookup(TrId.Cancel);
-                        importance: Importance.normal;
-                        clicked => { Navigate.home-page({ }); }
-                    }
-                    if Callbacks.tx-loading: CakeButton {
-                        label: "Reading transaction";
-                        importance: Importance.primary;
-                        enabled: false;
-                        loading: true;
-                    }
-                    if !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text == "": CakeSlideToSign {
-                        signing: Callbacks.signing;
-                        activated => {
-                            Callbacks.sign-transaction();
-                        }
-                    }
-                    if !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text != "": CakeButton {
-                        label: TR2.lookup(TrId.ReviewSign);
-                        importance: Importance.primary;
-                        clicked => {
-                            Callbacks.sign-transaction();
-                        }
-                    }
-                    if !Callbacks.tx-loading && !Callbacks.tx-loaded: CakeButton {
-                        label: TR2.lookup(TrId.ReviewSign);
-                        importance: Importance.primary;
-                        enabled: false;
-                    }
-                }
-            }
-        }
-
-        if is-address-open: Rectangle {
-            z: 200;
-            width: parent.width;
-            height: parent.height;
-            background: Palette.overlay;
-
-            TouchArea {
-                width: parent.width;
-                height: parent.height;
-                clicked => { is-address-open = false; }
-            }
-
-            Panel {
-                width: UISize.modal-width;
-                height: 300px;
-                x: (parent.width - self.width) / 2;
-                y: Size.sz16;
-                background: Cake.surface;
-
                 VerticalLayout {
-                    padding: Size.sz6;
-                    spacing: Size.sz4;
+                    if review-step == 0: VerticalLayout {
+                        spacing: Size.sz2;
 
-                    HeadingMd {
-                        text: "Recipient address";
-                        horizontal-alignment: center;
+                        TextSm {
+                            text: "Step 1 of 2 - Recipients";
+                            color: Cake.on-surface-dim;
+                            horizontal-alignment: center;
+                        }
+
+                        VerticalLayout {
+                            height: 124px;
+                            spacing: Size.sz2;
+                            alignment: center;
+
+                            TextMd {
+                                text: TR2.lookup(TrId.ReviewSending);
+                                color: Cake.on-surface-dim;
+                                horizontal-alignment: center;
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: Size.sz2;
+
+                                HeadingXl {
+                                    text: Callbacks.amount-xmr;
+                                    color: Cake.on-surface-strong;
+                                    horizontal-stretch: 0;
+                                    vertical-alignment: center;
+                                }
+
+                                TextLg {
+                                    text: "XMR";
+                                    color: Cake.on-surface-dim;
+                                    horizontal-stretch: 0;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        for recipient[index] in Callbacks.dest-addresses: AddressRow {
+                            label: index == 0 ? TR2.lookup(TrId.ReviewTo) : "Additional recipient";
+                            value: recipient;
+                        }
+
+                        CakeStatusBanner {
+                            text: Callbacks.status-text;
+                            danger: !Callbacks.tx-loading;
+                        }
+
+                        Rectangle { height: Size.sz2; }
                     }
-                    TextSm {
-                        text: selected-dest-address;
-                        color: Cake.on-surface;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+
+                    if review-step == 1: VerticalLayout {
+                        spacing: Size.sz2;
+
+                        TextSm {
+                            text: "Step 2 of 2 - Transaction details";
+                            color: Cake.on-surface-dim;
+                            horizontal-alignment: center;
+                        }
+
+                        CakeCard {
+                            VerticalLayout {
+                                padding-top: Size.sz2;
+                                padding-bottom: Size.sz2;
+                                Row { label: TR2.lookup(TrId.ReviewChange);  value: Callbacks.change-xmr + " XMR"; }
+                                Row {
+                                    label: TR2.lookup(TrId.ReviewFee);
+                                    value: Callbacks.fee-xmr == "—" ? Callbacks.fee-xmr : Callbacks.fee-xmr + " XMR";
+                                }
+                                Row { label: TR2.lookup(TrId.ReviewOutputs); value: Callbacks.output-count; }
+                            }
+                        }
+
+                        AddressRow {
+                            label: TR2.lookup(TrId.ReviewFrom);
+                            value: Callbacks.primary-address;
+                            detail: Callbacks.tx-account-info;
+                        }
+
+                        CakeStatusBanner {
+                            text: Callbacks.status-text;
+                            danger: !Callbacks.tx-loading;
+                        }
+
+                        Rectangle { height: Size.sz2; }
                     }
-                    Rectangle { }
-                    CakeButton {
-                        label: TR2.lookup(TrId.Done);
-                        importance: Importance.primary;
-                        clicked => { is-address-open = false; }
+                }
+            }
+
+            ButtonSection {
+                spacing: Size.sz3;
+                padding-left: Size.sz6;
+                padding-right: Size.sz6;
+                padding-bottom: Size.sz4;
+
+                if review-step == 0: CakeButton {
+                    label: TR2.lookup(TrId.Cancel);
+                    importance: Importance.normal;
+                    clicked => {
+                        Callbacks.cancel-transaction-review();
+                        Navigate.wallet-detail-page({ replace: true });
                     }
+                }
+                if review-step == 0 && Callbacks.tx-loading: CakeButton {
+                    label: "Reading transaction";
+                    importance: Importance.primary;
+                    enabled: false;
+                    loading: true;
+                }
+                if review-step == 0 && !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text == "": CakeButton {
+                    label: "Continue";
+                    importance: Importance.primary;
+                    clicked => { review-step = 1; }
+                }
+                if review-step == 0 && !Callbacks.tx-loading && (!Callbacks.tx-loaded || Callbacks.status-text != ""): CakeButton {
+                    label: "Continue";
+                    importance: Importance.primary;
+                    enabled: false;
+                }
+                if review-step == 1: CakeButton {
+                    label: "Back";
+                    importance: Importance.normal;
+                    clicked => { review-step = 0; }
+                }
+                if review-step == 1 && !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text == "": CakeSlideToSign {
+                    signing: Callbacks.signing;
+                    activated => {
+                        Callbacks.sign-transaction();
+                    }
+                }
+                if review-step == 1 && !Callbacks.tx-loading && Callbacks.tx-loaded && Callbacks.status-text != "": CakeButton {
+                    label: TR2.lookup(TrId.ReviewSign);
+                    importance: Importance.primary;
+                    clicked => {
+                        Callbacks.sign-transaction();
+                    }
+                }
+                if review-step == 1 && !Callbacks.tx-loading && !Callbacks.tx-loaded: CakeButton {
+                    label: TR2.lookup(TrId.ReviewSign);
+                    importance: Importance.primary;
+                    enabled: false;
                 }
             }
         }
     }
+
+    if Callbacks.signing: SigningProgress { }
+
+    if !Callbacks.signing && Callbacks.signed-ok && Callbacks.tx-via-quantum-link: SigningSuccess { }
 }

@@ -33,13 +33,27 @@ template = ["gui-app", "fs-generic"]
     "GetUsbReadAccess",
     "GetUsbWriteAccess",
 ]
+"os/bt" = [
+    "GetBtAddr",
+]
+"os/settings" = [
+    "GetDeviceName",
+    "GetPrimeColor",
+]
 "os/quantum-link" = [
+    "GetXidDocument",
+    "SubscribePairingEvent",
+    "SubscribeConnectionStatus",
+    "UnpairFromEnvoy",
     "SubscribeMoneroWatchCredentialsRequest",
     "SubscribeMoneroKeyImageSyncRequest",
     "SubscribeMoneroSignTransactionRequest",
+    "SubscribeMoneroVerifyAddressRequest",
     "SubscribeWdkRequestCancelled",
     "PublishMoneroWatchCredentials",
+    "PublishMoneroWalletMetadata",
     "PublishMoneroKeyImages",
     "PublishMoneroSignedTransaction",
+    "PublishMoneroVerifiedAddress",
     "RejectWdkRequest",
 ]

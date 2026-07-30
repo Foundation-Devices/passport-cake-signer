@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, Icon, NavHeader,
-         OverlayMenu, PageBody, PopupMenuItem, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
+import { ButtonSection, ContentSection, OverlayMenu, PageBody,
+         TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { CakeButton, CakeIcon, CakeNavHeader, CakePopupMenuItem,
+         CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { WalletDetailPageProps } from "./props.slint";
@@ -12,67 +13,139 @@ import { TR2, TrId } from "../../gen/tr.slint";
 import { Cake } from "../../cake-theme.slint";
 
 component WalletHeroCard inherits Rectangle {
-    in property <string> wallet-name;
     in property <bool> archived;
     in property <bool> derived;
 
+    width: 432px;
     height: 250px;
-    background: archived ? Cake.surface-alt : Cake.monero-card;
-    border-radius: Size.sz6;
+    background: root.archived ? Cake.surface-low : Cake.monero-card-solid;
+    border-radius: Cake.monero-card-radius;
     clip: true;
 
-    if !archived: Image {
+    if !root.archived: Image {
         source: @image-url("../../../assets/icons/monero-card-inlay.svg");
         width: parent.width;
         height: parent.height;
+        opacity: 0.42;
     }
 
     VerticalLayout {
         padding: Size.sz5;
-        spacing: Size.sz3;
+        spacing: Size.sz2;
 
-        HorizontalLayout {
-            spacing: Size.sz3;
-
-            Rectangle {
-                width: Size.sz12;
-                height: Size.sz12;
-                border-radius: Size.sz3;
-                background: archived ? Cake.surface : #FFFFFF55;
-
-                Icon {
-                    name: archived ? "archive" : (derived ? "device" : "import");
-                    size: IconSize.px32;
-                    color: archived ? Cake.on-surface-dim : Cake.on-monero;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
-            }
-
-            Rectangle { }
+        TextLg {
+            text: "Primary account";
+            color: root.archived ? Cake.on-surface : Cake.on-monero;
+            bold: true;
+            wrap: word-wrap;
         }
 
         Rectangle { }
 
         TextSm {
-            text: archived ? "Archived wallet" : (derived ? "Created on Prime" : "Imported wallet");
-            color: archived ? Cake.on-surface-dim : Cake.on-monero;
-            opacity: archived ? 1 : 0.72;
-            overflow: elide;
-        }
-
-        TextLg {
-            text: wallet-name;
-            color: archived ? Cake.on-surface : Cake.on-monero;
-            bold: true;
+            text: root.archived ? "Archived"
+                : root.derived ? "Key generated on Passport"
+                : "Imported Key";
+            color: root.archived ? Cake.on-surface-dim : Cake.on-monero;
+            opacity: root.archived ? 1 : 0.72;
             wrap: word-wrap;
         }
+    }
+}
 
-        TextSm {
-            text: derived ? "Recoverable from this device seed" : "Restored from a Monero seed";
-            color: archived ? Cake.on-surface-dim : Cake.on-monero;
-            opacity: archived ? 1 : 0.64;
-            wrap: word-wrap;
+component CakeConnectionPanel inherits Rectangle {
+    in property <bool> linked;
+    in property <bool> live;
+    in property <bool> paired;
+
+    width: 432px;
+    height: 158px;
+    background: Cake.wallet-list-card;
+    border-radius: Cake.list-card-radius;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        HorizontalLayout {
+            height: 86px;
+            padding-left: Size.sz4;
+            padding-right: Size.sz4;
+            spacing: Size.sz3;
+
+            VerticalLayout {
+                width: Size.sz11;
+                alignment: center;
+
+                Rectangle {
+                    width: Size.sz11;
+                    height: Size.sz11;
+                    border-radius: self.width / 2;
+                    background: root.linked && root.live ? Cake.success-bg : Cake.surface-high;
+
+                    CakeIcon {
+                        name: "bluetooth";
+                        size: IconSize.px24;
+                        icon-color: root.linked && root.live ? Cake.success : Cake.blue-soft;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: Size.sz1;
+
+                TextLg {
+                    text: "Cake Wallet";
+                    color: Cake.on-surface-strong;
+                    bold: true;
+                }
+
+                TextSm {
+                    text: !root.linked ? "Not added"
+                        : root.live ? "QuantumLink connected"
+                        : root.paired ? "Reconnecting automatically"
+                        : "Pairing required";
+                    color: root.linked && root.live ? Cake.success : Cake.on-surface-dim;
+                }
+            }
+        }
+
+        Rectangle {
+            x: Size.sz4;
+            width: parent.width - Size.sz8;
+            height: 1px;
+            background: Cake.divider;
+        }
+
+        HorizontalLayout {
+            height: 71px;
+            padding-left: Size.sz5;
+            padding-right: Size.sz5;
+            spacing: Size.sz3;
+
+            VerticalLayout {
+                width: IconSize.px24;
+                alignment: center;
+
+                CakeIcon {
+                    name: root.linked && root.live ? "check" : "info";
+                    size: IconSize.px24;
+                    icon-color: root.linked && root.live ? Cake.success : Cake.on-surface-soft;
+                }
+            }
+
+            TextSm {
+                text: !root.linked ? "Add this wallet to Cake to receive requests."
+                    : root.live ? "Ready for signing and address checks from Cake."
+                    : root.paired ? "Requests resume when Cake is nearby."
+                    : "Open the pairing flow to restore access.";
+                color: Cake.on-surface-dim;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
         }
     }
 }
@@ -86,8 +159,9 @@ export component WalletDetailPagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
-                title: "Wallet";
+            CakeNavHeader {
+                title: Callbacks.wallet-label;
+                left-icon: "chevron-left";
                 right-icon: "ellipsis";
                 clicked => { Navigate.home-page({ }); }
                 right-clicked => { is-menu-open = !is-menu-open; }
@@ -98,7 +172,6 @@ export component WalletDetailPagePage inherits Rectangle {
                     spacing: Size.sz4;
 
                     WalletHeroCard {
-                        wallet-name: Callbacks.wallet-label;
                         archived: Callbacks.wallet-archived;
                         derived: Callbacks.wallet-derived;
                     }
@@ -110,6 +183,12 @@ export component WalletDetailPagePage inherits Rectangle {
                         wrap: word-wrap;
                     }
 
+                    if !Callbacks.wallet-archived: CakeConnectionPanel {
+                        linked: Callbacks.wallet-cake-linked;
+                        live: Callbacks.ql-cake-ready;
+                        paired: Callbacks.ql-cake-paired;
+                    }
+
                     CakeStatusBanner {
                         text: Callbacks.status-text;
                         danger: false;
@@ -117,33 +196,18 @@ export component WalletDetailPagePage inherits Rectangle {
                 }
 
                 ButtonSection {
-                    if !Callbacks.wallet-archived: CakeButton {
-                        label: TR2.lookup(TrId.HomePairQr);
-                        icon: "cake";
-                        importance: Importance.normal;
-                        clicked => {
-                            Callbacks.prepare-pair-qr();
-                            Navigate.pair-page({ });
-                        }
-                    }
-                    if !Callbacks.wallet-archived: CakeButton {
-                        label: "Verify address";
-                        icon: "scan-qr";
-                        importance: Importance.normal;
-                        clicked => { Navigate.verify-address-page({ }); }
-                    }
-                    if !Callbacks.wallet-archived: CakeButton {
-                        label: TR2.lookup(TrId.HomeSignTransaction);
-                        icon: "scan-qr";
+                    if !Callbacks.wallet-archived && !Callbacks.wallet-cake-linked: CakeButton {
+                        label: "Add to Cake";
+                        icon: "bluetooth";
                         importance: Importance.primary;
-                        clicked => {
-                            Callbacks.scan-unsigned-tx();
-                            if Callbacks.tx-loaded || Callbacks.tx-loading {
-                                Navigate.review-page({ });
-                            } else if Callbacks.keyimages-ready {
-                                Navigate.keyimage-qr-page({ });
-                            }
-                        }
+                        clicked => { Navigate.ql-pair-page({ }); }
+                    }
+
+                    if !Callbacks.wallet-archived && Callbacks.wallet-cake-linked && !Callbacks.ql-cake-paired: CakeButton {
+                        label: "Pair again";
+                        icon: "bluetooth";
+                        importance: Importance.primary;
+                        clicked => { Navigate.ql-pair-page({ }); }
                     }
                 }
             }
@@ -154,16 +218,35 @@ export component WalletDetailPagePage inherits Rectangle {
             height: parent.height;
             touched-off => { is-menu-open = false; }
 
-            if !Callbacks.wallet-archived: PopupMenuItem {
+            if !Callbacks.wallet-archived && Callbacks.wallet-cake-linked: CakePopupMenuItem {
+                label: "Remove wallet from Cake";
+                icon: "bluetooth";
+                first: true;
+                height: Size.sz16 + Size.sz6;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.unlink-active-wallet-from-cake();
+                }
+            }
+            if !Callbacks.wallet-archived: CakePopupMenuItem {
+                label: "Export watch-only QR";
+                icon: "cake";
+                first: !Callbacks.wallet-cake-linked;
+                clicked => {
+                    is-menu-open = false;
+                    Callbacks.prepare-pair-qr();
+                    Navigate.pair-page({ });
+                }
+            }
+            if !Callbacks.wallet-archived: CakePopupMenuItem {
                 label: "Rename wallet";
                 icon: "edit";
-                first: true;
                 clicked => {
                     is-menu-open = false;
                     Navigate.rename-wallet-page({ });
                 }
             }
-            if !Callbacks.wallet-archived: PopupMenuItem {
+            if !Callbacks.wallet-archived: CakePopupMenuItem {
                 label: TR2.lookup(TrId.MenuViewSeed);
                 icon: "eye";
                 last: !Callbacks.wallet-can-archive;
@@ -173,7 +256,7 @@ export component WalletDetailPagePage inherits Rectangle {
                     Navigate.seed-page({ });
                 }
             }
-            if Callbacks.wallet-can-archive: PopupMenuItem {
+            if Callbacks.wallet-can-archive: CakePopupMenuItem {
                 label: "Archive wallet";
                 icon: "archive";
                 last: true;
@@ -182,7 +265,7 @@ export component WalletDetailPagePage inherits Rectangle {
                     Callbacks.archive-active-wallet();
                 }
             }
-            if Callbacks.wallet-can-restore: PopupMenuItem {
+            if Callbacks.wallet-can-restore: CakePopupMenuItem {
                 label: "Restore wallet";
                 icon: "archive";
                 first: true;
@@ -191,7 +274,7 @@ export component WalletDetailPagePage inherits Rectangle {
                     Callbacks.restore-active-wallet();
                 }
             }
-            if Callbacks.wallet-can-delete: PopupMenuItem {
+            if Callbacks.wallet-can-delete: CakePopupMenuItem {
                 label: "Delete permanently";
                 icon: "delete";
                 last: true;

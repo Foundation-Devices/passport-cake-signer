@@ -6,6 +6,7 @@ import { DeleteWalletConfirmPagePage } from "../pages/delete-wallet-confirm/page
 import { ImportWalletPagePage } from "../pages/import-wallet/page.slint";
 import { KeyimageQrPagePage } from "../pages/keyimage-qr/page.slint";
 import { PairPagePage } from "../pages/pair/page.slint";
+import { QlPairPagePage } from "../pages/ql-pair/page.slint";
 import { RenameWalletPagePage } from "../pages/rename-wallet/page.slint";
 import { ReviewPagePage } from "../pages/review/page.slint";
 import { SeedPagePage } from "../pages/seed/page.slint";
@@ -35,6 +36,9 @@ export component Router inherits Rectangle {
     }
     if (RouteState.active == RouteOption.PairPage): PairPagePage {
         props <=> RouteState.pair-page-props;
+    }
+    if (RouteState.active == RouteOption.QlPairPage): QlPairPagePage {
+        props <=> RouteState.ql-pair-page-props;
     }
     if (RouteState.active == RouteOption.RenameWalletPage): RenameWalletPagePage {
         props <=> RouteState.rename-wallet-page-props;

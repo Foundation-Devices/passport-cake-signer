@@ -6,6 +6,7 @@ import { DeleteWalletConfirmPageProps } from "../pages/delete-wallet-confirm/pro
 import { ImportWalletPageProps } from "../pages/import-wallet/props.slint";
 import { KeyimageQrPageProps } from "../pages/keyimage-qr/props.slint";
 import { PairPageProps } from "../pages/pair/props.slint";
+import { QlPairPageProps } from "../pages/ql-pair/props.slint";
 import { RenameWalletPageProps } from "../pages/rename-wallet/props.slint";
 import { ReviewPageProps } from "../pages/review/props.slint";
 import { SeedPageProps } from "../pages/seed/props.slint";
@@ -23,6 +24,7 @@ export enum RouteOption {
     ImportWalletPage,
     KeyimageQrPage,
     PairPage,
+    QlPairPage,
     RenameWalletPage,
     ReviewPage,
     SeedPage,
@@ -41,6 +43,7 @@ export global RouteState {
     in-out property <ImportWalletPageProps> import-wallet-page-props;
     in-out property <KeyimageQrPageProps> keyimage-qr-page-props;
     in-out property <PairPageProps> pair-page-props;
+    in-out property <QlPairPageProps> ql-pair-page-props;
     in-out property <RenameWalletPageProps> rename-wallet-page-props;
     in-out property <ReviewPageProps> review-page-props;
     in-out property <SeedPageProps> seed-page-props;

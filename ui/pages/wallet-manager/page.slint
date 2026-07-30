@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { NavHeader, ScrollBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { ScrollBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
 import { Size } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { WalletManagerPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { Cake } from "../../cake-theme.slint";
-import { CakeListTile } from "../../cake-widgets.slint";
+import { CakeListTile, CakeNavHeader } from "../../cake-widgets.slint";
 
 export component WalletManagerPagePage inherits Rectangle {
     in property <WalletManagerPageProps> props;
@@ -17,7 +17,7 @@ export component WalletManagerPagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
+            CakeNavHeader {
                 title: "Archived wallets";
                 clicked => { Navigate.home-page({ }); }
             }

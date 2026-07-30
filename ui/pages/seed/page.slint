@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, NavHeader, HeadingMd, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
-import { CakeButton, CakeQrFrame, CakeStatusBanner } from "../../cake-widgets.slint";
+import { ButtonSection, ContentSection, HeadingMd, Modal, Panel, Qrcode, TextLg, TextMd, TextSm, BasePage, PageBody } from "@ui/widgets.slint";
+import { CakeButton, CakeNavHeader, CakeQrFrame } from "../../cake-widgets.slint";
 import { Palette, Size, Importance, UISize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SeedPageProps } from "./props.slint";
@@ -17,10 +17,11 @@ component SeedWordItem inherits Rectangle {
 
     height: compact ? 32px : 52px;
     width: 216px;
-    background: Cake.surface-card;
-    border-radius: Size.sz3;
+    background: Cake.wallet-list-card;
+    border-radius: Cake.cta-radius;
     border-width: 1px;
     border-color: Cake.divider;
+    clip: true;
 
     HorizontalLayout {
         padding-left: Size.sz3;
@@ -57,13 +58,14 @@ component SeedWordItem inherits Rectangle {
 export component SeedPagePage inherits Rectangle {
     in property <SeedPageProps> props;
     property <bool> is-seed-qr-open: false;
+    property <bool> is-seed-warning-open: true;
     background: Cake.background;
 
     BasePage {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
+            CakeNavHeader {
                 title: TR2.lookup(TrId.SeedTitle);
                 left-icon: "chevron-left";
                 right-icon: "scan-qr";
@@ -88,16 +90,7 @@ export component SeedPagePage inherits Rectangle {
                         ContentSection {
                             width: parent.width;
                             spacing: Size.sz2;
-                            CakeStatusBanner {
-                                text: TR2.lookup(TrId.SeedWarning);
-                                danger: false;
-                            }
-                            TextSm {
-                                text: "Showing seed for " + Callbacks.wallet-label;
-                                color: Cake.on-surface-dim;
-                                horizontal-alignment: center;
-                                wrap: word-wrap;
-                            }
+
                             VerticalLayout {
                                 alignment: center;
                                 spacing: Size.sz1;
@@ -138,6 +131,22 @@ export component SeedPagePage inherits Rectangle {
                         }
                     }
                 }
+            }
+        }
+
+        if is-seed-warning-open: Modal {
+            z: 300;
+            width: parent.width;
+            height: parent.height;
+            icon: "alert";
+            icon-color: Cake.warning;
+            title: "Keep your recovery seed private";
+            text: TR2.lookup(TrId.SeedWarning);
+
+            CakeButton {
+                label: "I understand";
+                importance: Importance.primary;
+                clicked => { is-seed-warning-open = false; }
             }
         }
 

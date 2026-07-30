@@ -15,10 +15,13 @@ foundation-ur = { workspace = true }
 log = { workspace = true }
 log-server = { workspace = true }
 quantum-link = { workspace = true }
+bt = { workspace = true }
+ql-utils = { workspace = true }
 security = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 server = { workspace = true }
+settings = { workspace = true }
 slint-keyos-platform = { path = "../../slint-keyos-platform/runtime" }
 
 # Cross-target utilities

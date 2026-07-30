@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, Icon, Input, NavHeader,
+import { ButtonSection, ContentSection, HeadingLg, Input,
          PageBody, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton, CakeStatusBanner } from "../../cake-widgets.slint";
+import { CakeButton, CakeIcon, CakeNavHeader, CakeStatusBanner } from "../../cake-widgets.slint";
 import { Importance, Size, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { ImportWalletPageProps } from "./props.slint";
@@ -20,7 +20,7 @@ export component ImportWalletPagePage inherits Rectangle {
         background: Cake.background;
 
         VerticalLayout {
-            NavHeader {
+            CakeNavHeader {
                 title: "Import wallet";
                 clicked => {
                     if step == 0 {
@@ -44,10 +44,10 @@ export component ImportWalletPagePage inherits Rectangle {
                             height: 88px;
                             border-radius: Size.sz6;
                             background: Cake.surface;
-                            Icon {
+                            CakeIcon {
                                 name: "import";
                                 size: IconSize.px64;
-                                color: Cake.blue;
+                                icon-color: Cake.blue;
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
                             }
@@ -137,7 +137,7 @@ export component ImportWalletPagePage inherits Rectangle {
                         clicked => { step = 2; }
                     }
                     if step == 1: CakeButton {
-                        label: "Scan Cake seed QR";
+                        label: "Scan Seed QR";
                         icon: "scan-qr";
                         importance: Importance.primary;
                         clicked => {

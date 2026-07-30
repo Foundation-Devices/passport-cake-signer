@@ -57,6 +57,9 @@ export global Navigate {
     // /pair
     callback pair-page(NavigateOptions);
     
+    // /ql-pair
+    callback ql-pair-page(NavigateOptions);
+
     // /rename-wallet
     callback rename-wallet-page(NavigateOptions);
     
@@ -89,6 +92,7 @@ export global RoutePath {
     out property <string> import-wallet-page : "/import-wallet";
     out property <string> keyimage-qr-page : "/keyimage-qr";
     out property <string> pair-page : "/pair";
+    out property <string> ql-pair-page : "/ql-pair";
     out property <string> rename-wallet-page : "/rename-wallet";
     out property <string> review-page : "/review";
     out property <string> seed-page : "/seed";

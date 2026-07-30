@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, ShieldPage, JumboIcon, Icon } from "@ui/widgets.slint";
-import { CakeButton } from "../../cake-widgets.slint";
+import { ButtonSection, ContentSection, HeadingLg, Button, TextMd, ShieldPage, JumboIcon } from "@ui/widgets.slint";
+import { CakeButton, CakeIcon } from "../../cake-widgets.slint";
 import { Palette, Size, Importance, IconSize } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { SignDonePageProps } from "./props.slint";
@@ -22,7 +22,7 @@ export component SignDonePagePage inherits Rectangle {
                 alignment: center;
                 JumboIcon {
                     name: "jumbo-circle";
-                    Icon { name: "check"; size: IconSize.px96; color: Cake.success; }
+                    CakeIcon { name: "check"; size: IconSize.px96; icon-color: Cake.success; }
                 }
             }
             HeadingLg {

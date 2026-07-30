@@ -1,0 +1,298 @@
+// SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { ButtonSection, ContentSection, HeadingLg, TextLg, TextMd, TextSm,
+         BasePage, PageBody, Qrcode, AnimatedQrCode } from "@ui/widgets.slint";
+import { CakeButton, CakeIcon, CakeNavHeader, CakeQrFrame } from "../../cake-widgets.slint";
+import { Size, Importance, IconSize } from "@ui/theme.slint";
+import { Callbacks } from "../../callbacks.slint";
+import { QlPairPageProps } from "./props.slint";
+import { Navigate } from "../../gen/navigate.slint";
+import { Cake } from "../../cake-theme.slint";
+
+component PairingSuccess inherits Rectangle {
+    height: 476px;
+    background: #00000000;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Size.sz4;
+
+        HorizontalLayout {
+            height: 190px;
+            alignment: center;
+
+            Rectangle {
+                width: 190px;
+                height: 190px;
+                background: #00000000;
+
+                success-ring := Rectangle {
+                    width: 164px;
+                    height: self.width;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: self.width / 2;
+                    background: #12A43918;
+                    border-width: 2px;
+                    border-color: #12A43970;
+                }
+
+                success-badge := Rectangle {
+                    width: 128px;
+                    height: self.width;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: self.width / 2;
+                    background: Cake.success;
+
+                    CakeIcon {
+                        name: "check";
+                        size: IconSize.px64;
+                        icon-color: Cake.on-surface-strong;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+        }
+
+        HeadingLg {
+            text: "Connected";
+            color: Cake.on-surface-strong;
+            horizontal-alignment: center;
+        }
+
+        TextMd {
+            text: "Cake Wallet and Passport Prime are securely linked.";
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            width: 432px;
+            height: 76px;
+            background: Cake.wallet-list-card;
+            border-radius: Cake.list-card-radius;
+            clip: true;
+
+            HorizontalLayout {
+                padding-left: Size.sz5;
+                padding-right: Size.sz5;
+                spacing: Size.sz4;
+
+                VerticalLayout {
+                    width: Size.sz11;
+                    alignment: center;
+
+                    Rectangle {
+                        width: Size.sz11;
+                        height: Size.sz11;
+                        border-radius: self.width / 2;
+                        background: Cake.blue-deep;
+
+                        CakeIcon {
+                            name: "bluetooth";
+                            size: IconSize.px24;
+                            icon-color: Cake.blue-soft;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+                }
+
+                TextMd {
+                    text: "QuantumLink active";
+                    color: Cake.on-surface-strong;
+                    bold: true;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        TextSm {
+            text: "Return to Cake Wallet to finish adding this wallet.";
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component EnrollmentReady inherits Rectangle {
+    height: 476px;
+    background: #00000000;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Size.sz5;
+
+        HorizontalLayout {
+            height: 146px;
+            alignment: center;
+
+            Rectangle {
+                width: 132px;
+                height: 132px;
+                border-radius: self.width / 2;
+                background: Cake.blue-deep;
+                border-width: 2px;
+                border-color: Cake.blue-soft;
+
+                CakeIcon {
+                    name: "bluetooth";
+                    size: IconSize.px64;
+                    icon-color: Cake.blue-soft;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+
+        HeadingLg {
+            text: "Ready to add";
+            color: Cake.on-surface-strong;
+            horizontal-alignment: center;
+        }
+
+        TextLg {
+            text: Callbacks.wallet-label;
+            color: Cake.on-surface-strong;
+            bold: true;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        TextMd {
+            text: "In Cake Wallet, go to Wallets > Restore Wallet > Hardware Wallet > Foundation > Add wallet from Passport.";
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        TextSm {
+            text: "No new QR pairing is required.";
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component QlPairPagePage inherits Rectangle {
+    in property <QlPairPageProps> props;
+    background: Cake.background;
+
+    init => {
+        Callbacks.begin-quantum-link-pairing();
+    }
+
+    BasePage {
+        background: Cake.background;
+
+        VerticalLayout {
+            CakeNavHeader {
+                title: "QuantumLink";
+                left-icon: "chevron-left";
+                clicked => {
+                    Callbacks.cancel-quantum-link-wallet-enrollment();
+                    Navigate.wallet-detail-page({ });
+                }
+            }
+
+            PageBody {
+                ContentSection {
+                    spacing: Size.sz4;
+
+                    if Callbacks.ql-cake-ready && Callbacks.wallet-cake-linked && !Callbacks.ql-pairing-resetting: PairingSuccess { }
+
+                    if Callbacks.ql-cake-ready && !Callbacks.wallet-cake-linked && !Callbacks.ql-pairing-resetting: EnrollmentReady { }
+
+                    if !Callbacks.ql-cake-ready || Callbacks.ql-pairing-resetting: TextMd {
+                        text: Callbacks.ql-pairing-resetting
+                            ? "Preparing a fresh QuantumLink pairing."
+                            : Callbacks.ql-cake-paired
+                                ? "This Passport is paired with Cake Wallet. QuantumLink reconnects automatically when Cake is nearby."
+                            : Callbacks.ql-paired
+                                ? "Passport Prime is paired with another app. Disconnect that QuantumLink connection in KeyOS settings first."
+                            : Callbacks.ql-bt-connected
+                                ? "Bluetooth is connected. In Cake Wallet, scan this second code to finish pairing."
+                                : "In Cake Wallet, choose Hardware wallet > Passport Prime, then scan this code.";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        if Callbacks.ql-pairing-resetting: TextMd {
+                            text: "Clearing previous pairing...";
+                            color: Cake.on-surface-dim;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+
+                        if !Callbacks.ql-pairing-resetting && !Callbacks.ql-paired && !Callbacks.ql-bt-connected && Callbacks.ql-static-qr != "": CakeQrFrame {
+                            Qrcode {
+                                data: Callbacks.ql-static-qr;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+
+                        if !Callbacks.ql-pairing-resetting && !Callbacks.ql-paired && !Callbacks.ql-bt-connected && Callbacks.ql-static-qr == "": TextMd {
+                            text: "Preparing Bluetooth code...";
+                            color: Cake.on-surface-dim;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+
+                        if !Callbacks.ql-pairing-resetting && !Callbacks.ql-paired && Callbacks.ql-bt-connected && Callbacks.ql-identity-parts.length > 0: AnimatedQrCode {
+                            parts: Callbacks.ql-identity-parts;
+                        }
+
+                        if !Callbacks.ql-pairing-resetting && !Callbacks.ql-paired && Callbacks.ql-bt-connected && Callbacks.ql-identity-parts.length == 0: TextMd {
+                            text: "Preparing identity code...";
+                            color: Cake.on-surface-dim;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    if !Callbacks.ql-cake-ready || Callbacks.ql-pairing-resetting: TextSm {
+                        text: Callbacks.ql-pairing-resetting
+                            ? "Preparing..."
+                            : Callbacks.ql-cake-paired
+                            ? "Reconnecting automatically"
+                            : Callbacks.ql-paired
+                            ? "Another QuantumLink peer is paired"
+                            : Callbacks.ql-cake-ready
+                            ? "Connected"
+                            : Callbacks.ql-paired
+                            ? "Confirming secure link"
+                            : Callbacks.ql-bt-connected
+                            ? "Step 2 of 2: identity QR"
+                            : "Step 1 of 2: Bluetooth QR";
+                        color: Cake.on-surface-dim;
+                        horizontal-alignment: center;
+                    }
+
+                }
+
+                ButtonSection {
+                    CakeButton {
+                        label: Callbacks.ql-cake-ready ? "Continue" : "Done";
+                        importance: Importance.primary;
+                        clicked => {
+                            if !Callbacks.ql-cake-ready || Callbacks.wallet-cake-linked {
+                                Callbacks.cancel-quantum-link-wallet-enrollment();
+                            }
+                            Navigate.wallet-detail-page({ });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

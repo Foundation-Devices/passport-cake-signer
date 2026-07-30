@@ -6,10 +6,12 @@ built as a native KeyOS app and designed to pair with the public
 
 Cake remains the online/watch-only wallet. Passport Prime holds the Monero spend
 key offline, reviews unsigned transactions built by Cake, signs locally, and
-returns Cake-compatible signed transactions over animated QR or QuantumLink.
+returns Cake-compatible signed transactions over QuantumLink.
 
 Current status: real hardware signing works. A transaction has been signed on
-Passport Prime, scanned back into Cake Wallet, and sent successfully.
+Passport Prime, scanned back into Cake Wallet, and sent successfully. The
+QuantumLink replacement is implemented and builds end to end; full hardware
+regression testing of that transport is the next validation step.
 
 This repo is the app source snapshot. Build and hardware validation happen after
 syncing into the KeyOS integration worktree.
@@ -42,19 +44,17 @@ marked as continued here.
 | --- | --- |
 | Key/address derivation from KeyOS app seed | Working |
 | 16-word Polyseed recovery phrase for Prime-derived wallets | Working |
-| Pairing QR for Cake watch-only restore | Working |
-| Cake/CupCake animated QR transport | Working |
-| Cake `xmr-output` -> Prime key-image sync -> Cake `xmr-keyimage` | Working |
-| Cake `xmr-txunsigned` scan, decrypt, auth-check, and review | Working |
+| QuantumLink pairing bootstrap | Working |
+| QuantumLink watch-only restore and key-image sync | Working |
+| QuantumLink transaction request, decrypt, auth-check, and review | Working |
 | On-device Monero signing and Cake `signed_tx_set` packaging | Working |
-| Cake broadcast after scanning Prime signed QR | Working |
-| QuantumLink watch restore, key-image sync, and transaction signing | Working |
+| QuantumLink signed-transaction return to Cake | Working |
+| QuantumLink receive-address verification | Working |
 | QuantumLink request cancellation and stale-response suppression | Working |
 | Multiple Prime-derived wallet slots | Working |
 | Import existing 16-word Polyseed wallets | Working |
 | Import existing 24/25-word legacy Monero seeds | Working |
 | Seed import by QR, typed text, or text file | Working |
-| Address verification by QR or account/subaddress index | Working |
 | Archive/delete/restore wallet records | Working |
 
 ## System Model
@@ -74,26 +74,40 @@ Cake does not get:
 - Prime device seed
 - Imported wallet seed phrases
 
-The normal QR flow is:
+The normal QuantumLink flow is:
 
 ```text
-Passport Prime                         Cake Wallet mobile
---------------                         ------------------
-Pairing QR --------------------------> Restore watch-only wallet
+Passport Prime                              Cake Wallet mobile
+--------------                              ------------------
+Bluetooth/identity QR bootstrap <---------> Pair QuantumLink
+Arm wallet A on Prime
+Watch credentials A ----------------------> Restore watch-only wallet A
 
-                                      Scan chain / track balance
+Arm wallet B on the same Prime
+Watch credentials B ----------------------> Restore watch-only wallet B
+                       (no second device pairing)
 
-                         <----------- xmr-output QR, if Cake needs spent-output sync
-xmr-keyimage QR ---------------------> Import key images
+                                      <---- Key-image sync request
+Key images -------------------------------> Update spent-output state
 
-                         <----------- xmr-txunsigned QR
-Review and sign locally
-xmr-txsigned QR ---------------------> Broadcast signed transaction
+                                      <---- Unsigned transaction request
+Review and swipe to sign locally
+Signed transaction -----------------------> Import and broadcast
+
+                                      <---- Address/index verification request
+Derive and confirm address locally
+Verified address -------------------------> Compare with Cake receive address
 ```
 
-The app also still has file-export hooks for view-only data, key images, and
-signed transactions. QR remains the public-Cake fallback path; QuantumLink is the
-Android fork path for Bluetooth transport.
+The wallet menu retains an explicit watch-only QR export for compatibility and
+recovery. Normal transaction signing and address verification no longer expose
+manual QR scanner controls.
+
+QuantumLink pairing belongs to the device, not to an individual Monero wallet.
+Each wallet must still be explicitly added to Cake from its Prime wallet screen.
+Prime remembers those wallet associations independently, while Cake reuses the
+same authenticated QuantumLink session for every enrolled wallet. Removing one
+wallet from Cake does not disconnect the device or affect the other wallets.
 
 ## Build and Validation
 
@@ -107,6 +121,30 @@ the KeyOS integration worktree:
 The script syncs this repo into `apps/gui-app-cake-signer`, then runs KeyOS-side
 `cargo check`, app tests, app-only clippy, `xtask check`, and a hosted unsigned
 app build.
+
+Prime UI changes also have a physical-device visual gate. With an unlocked Prime
+showing the wallet list, capture approved baselines once:
+
+```bash
+python3 apps/gui-app-cake-signer/scripts/prime_visual_qa.py capture-suite \
+  --update-baselines
+```
+
+For subsequent changes, run the same command without `--update-baselines`. It
+captures the wallet list and first wallet detail screen from the real 480x800
+framebuffer, checks visible headings with OCR, rejects square/protruding card
+corners, verifies grouped-wallet dividers and non-overlapping detail panels,
+then compares both screenshots against the approved baselines:
+
+```bash
+python3 apps/gui-app-cake-signer/scripts/prime_visual_qa.py capture-suite
+```
+
+The detector itself has synthetic regression coverage:
+
+```bash
+python3 -m unittest apps/gui-app-cake-signer/tests/test_prime_visual_qa.py
+```
 
 Do not run `cargo test` from this standalone repo root; it will fail because
 workspace dependencies such as `foundation-ur` are defined by KeyOS.
@@ -136,32 +174,35 @@ Cake and Prime exchange standard Monero `wallet2` blobs:
 - `output_export`
 - `key_image_export`
 
-The QR layer is CupCake-compatible UR transport. `src/qr.rs` wraps the raw
-wallet2 blob as a CBOR bytestring and emits animated UR frames with Cake's
-Monero UR types:
+QuantumLink preserves Cake's CupCake-compatible UR payloads for the large
+wallet2 blobs. The typed WDK request/response envelope carries these UR strings
+over the authenticated QuantumLink session:
 
 - `xmr-txunsigned`
 - `xmr-txsigned`
 - `xmr-output`
 - `xmr-keyimage`
 
-The cryptographic code is transport-agnostic: the same raw wallet2 data can be
-handled by QR or file.
+The cryptographic code remains transport-agnostic: the same raw wallet2 data can
+be handled by QuantumLink, QR, or file.
 
 ## Signing Flow
 
-When Cake shows an unsigned transaction QR, Prime:
+When the user sends from the paired Cake wallet:
 
-1. Reassembles the animated UR payload.
-2. Unwraps the CBOR bytestring into the raw `unsigned_tx_set`.
+1. Cake sends an authenticated QuantumLink request containing its
+   `xmr-txunsigned` UR payload.
+2. Prime unwraps the CBOR bytestring into the raw `unsigned_tx_set`.
 3. Verifies the wallet2 authentication signature before decrypting.
 4. Decrypts with the wallet private view key.
 5. Parses transaction construction data, sources, destinations, fee/change, and
    account/subaddress metadata.
 6. Shows the user a review screen.
-7. Signs with the private spend key using the Rust Monero stack.
+7. Waits for the user to complete the on-device swipe, then signs with the
+   private spend key using the Rust Monero stack.
 8. Packages the signed transaction as a wallet2 `signed_tx_set`.
-9. Returns `xmr-txsigned` animated QR frames for Cake to scan and broadcast.
+9. Returns an authenticated QuantumLink response containing the `xmr-txsigned`
+   UR payload for Cake to import and broadcast.
 
 The signer currently builds a single Monero transaction using CLSAG and
 Bulletproof+ via the `monero-wallet` / monero-oxide stack. The resulting signed
@@ -172,12 +213,12 @@ set is encrypted and authenticated in wallet2 format so Cake can import it.
 Cake watch-only wallets need key images to know which outputs are already spent.
 When Cake requests sync, Prime:
 
-1. Scans Cake's `xmr-output` animated QR.
+1. Receives Cake's `xmr-output` payload over QuantumLink.
 2. Decrypts and parses Cake's wallet2 output export.
 3. Computes each output's one-time secret.
 4. Generates the Monero key image and a verifying signature.
 5. Builds a wallet2 `key_image_export`.
-6. Returns it as `xmr-keyimage` animated QR.
+6. Returns it as an authenticated `xmr-keyimage` QuantumLink response.
 
 Prime persists Cake output details per wallet record. If Cake sends only an
 incremental suffix after the coin set changes, Prime combines it with the
@@ -211,15 +252,12 @@ from the wallet's seed screen after the user opens that wallet.
 
 ## Address Verification
 
-The address verification screen can:
-
-- Scan a Cake Monero address QR.
-- Detect obvious Bitcoin address QRs and show a targeted error.
-- Search local wallets through common account/subaddress indexes.
-- Derive a specific account/subaddress address on demand.
-
-This helps users confirm that a Cake receive address belongs to a specific Prime
-wallet before pairing or funding.
+Cake sends the primary wallet address plus the selected account and subaddress
+indexes over QuantumLink. Prime identifies the matching local wallet,
+independently derives the requested address, and displays it for explicit
+on-device confirmation. Only after the user confirms does Prime return the
+address and indexes. Cake then compares all three values with its receive screen
+and warns the user if anything differs.
 
 ## Performance Notes
 
@@ -302,12 +340,13 @@ Do not flash unsigned builds on production hardware.
 - Multi-`pending_tx` wallet2 sets need more fixture coverage.
 - Integrated-address/payment-ID destinations are currently rejected by the
   signer path.
-- Large transactions may push QR scan time and signing time beyond what feels
-  polished.
+- Large transactions still need Bluetooth throughput and on-device signing
+  latency testing on real hardware.
 - The app needs broader regression fixtures from real Cake exports across:
   multiple recipients, many inputs, subaddresses, different fee conditions, and
   fresh vs previously synced watch-only wallets.
-- USB/file handoff is present as a fallback, but QR is the primary tested path.
+- The QuantumLink transaction/address flows are built and covered by protocol
+  tests, but still need a full real-hardware regression pass.
 
 ## FAQ
 
@@ -315,8 +354,8 @@ Do not flash unsigned builds on production hardware.
 
 Passport Prime now behaves like a Cake/CupCake-compatible Monero offline signer.
 Cake Wallet stays the online watch-only wallet. Prime holds the spend key,
-performs the cold-side wallet2 operations, and returns Cake-native signed
-transaction/key-image QR payloads.
+performs the cold-side wallet2 operations, and exchanges Cake-native
+transaction/key-image payloads over authenticated QuantumLink.
 
 ### How did we get here architecturally?
 
@@ -342,39 +381,37 @@ and Cake import/broadcast.
 ### What exactly has been proven on hardware?
 
 Prime has signed a real Monero transaction on hardware. Cake scanned the signed
-QR and sent the transaction successfully. The app also performs Cake's key-image
-sync path on device and has unit coverage for the signer, key-image parsing,
-wallet import, address validation, and QR payload bounds.
+QR and sent the transaction successfully. The replacement QuantumLink protocol
+now builds end to end and has coverage for authenticated transaction responses,
+address verification, key-image parsing, wallet import, and cancellation. Its
+full hardware regression pass is still pending.
 
 ### What are the main remaining technical risks?
 
 The biggest risks are compatibility breadth and performance. We need more real
 Cake fixtures across large transactions, multiple recipients, many inputs,
 subaddress-heavy wallets, fresh watch-only wallets, previously synced watch-only
-wallets, and edge cases such as multi-`pending_tx` sets. QR scan time and Monero
-signing latency also need continued profiling.
+wallets, and edge cases such as multi-`pending_tx` sets. QuantumLink throughput,
+reconnect behavior, and Monero signing latency need continued profiling.
 
-### Why is QR starting to feel like the limiting factor?
+### Why move signing and verification to QuantumLink?
 
-Monero payloads are much larger than typical Bitcoin signing payloads. Cake's
-unsigned transactions, output exports, key-image exports, and signed
-transactions can all span many animated QR frames. The QR path is valuable
-because it works with today's public Cake app, but it is not the ideal high-volume
-transport.
+Monero wallet2 payloads are much larger than typical Bitcoin signing payloads.
+QuantumLink removes the animated-QR scan loop while preserving the same
+Cake/CupCake transaction bytes, and it gives Cake a typed request/response path
+for independently verified receive addresses.
 
 ### What should the next transport step be?
 
-USB is the most obvious near-term improvement. It should be able to move the same
-wallet2 blobs without changing the signing core, while cutting scan friction and
-large-payload failure modes. QuantumLink is the more strategic direction if we
-want a richer Prime-to-phone pairing channel with better UX than animated QR.
+Harden the current QuantumLink path with real-hardware reconnect, cancellation,
+large-payload, and repeated-send tests. USB remains a possible wired fallback
+without requiring changes to the Monero signing core.
 
 ### Does adding USB or QuantumLink require rewriting the Monero core?
 
 No. The important separation is already in place. `src/monero/*` works on raw
-wallet2 blobs; `src/qr.rs` is only the current transport wrapper. USB or
-QuantumLink should transport the same raw bytes or the same typed payloads, then
-call into the same parse/sign/key-image functions.
+wallet2 blobs; QuantumLink now transports the same typed UR payloads and calls
+the existing parse/sign/key-image functions. USB could do the same.
 
 ### Why does Cake need the private view key?
 
@@ -396,6 +433,12 @@ the KeyOS app seed. Imported Polyseed and legacy Monero seeds are sealed locally
 with XChaCha20-Poly1305 under a key derived from the app seed. Archive/delete
 operate on wallet records, not on Cake's online wallet state.
 
+QuantumLink itself has one paired Cake peer per Prime. Multiple wallet records
+can be enrolled over that one peer. Watch-credential enrollment is locked to the
+wallet whose `Add to Cake` flow the user opened; later key-image, transaction,
+and address requests are matched to an enrolled wallet by Monero key material or
+primary address.
+
 ### What would need to happen before this becomes production-ready?
 
 The next work should focus on fixture breadth, transport reliability, and
@@ -403,7 +446,8 @@ hardening:
 
 - Add real Cake regression fixtures for every transaction shape we care about.
 - Stress test large input/output sets on hardware.
-- Decide whether USB, QuantumLink, or both become first-class transports.
+- Complete the QuantumLink real-hardware regression matrix and decide whether
+  USB is also needed as a wired fallback.
 - Tighten the UI around long-running signing/sync operations.
 - Audit wallet2 edge cases and Monero metadata preservation.
 - Get Foundation security review on seed storage, app permissions, and transport
