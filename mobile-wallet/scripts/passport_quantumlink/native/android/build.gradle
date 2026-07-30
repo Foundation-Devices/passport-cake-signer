@@ -1,0 +1,29 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.foundationdevices.passport'
+version = '0.1.0'
+
+android {
+  namespace "com.foundationdevices.passport.wdk.quantumlink"
+
+  defaultConfig {
+minSdkVersion 26
+    versionCode 1
+    versionName "0.1.0"
+    consumerProguardFiles "consumer-rules.pro"
+  }
+
+  sourceSets {
+    main {
+      jniLibs.srcDirs = ['src/main/jniLibs']
+    }
+  }
+}
+
+dependencies {
+  // UniFFI's generated Kotlin bindings use JNA to load libquantumlink_mobile.so.
+  implementation "net.java.dev.jna:jna:5.14.0@aar"
+}

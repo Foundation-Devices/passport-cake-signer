@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: © 2025 Foundation Devices, Inc. <hello@foundation.xyz>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "backup-shard"
+version = "0.3.0"
+edition = "2024"
+homepage.workspace = true
+
+[dependencies]
+dcbor = { workspace = true }
+zeroize = { version = "1.8.1", default-features = false, features = [
+    "zeroize_derive",
+] }
+rkyv = { workspace = true, optional = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+
+[features]
+keyos = ["rkyv"]

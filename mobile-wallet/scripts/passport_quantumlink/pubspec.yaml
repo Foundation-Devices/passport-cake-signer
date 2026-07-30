@@ -1,0 +1,19 @@
+name: passport_quantumlink
+description: Passport Prime QuantumLink bridge for Cake Wallet hardware-wallet flows.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.foundationdevices.passport.quantumlink
+        pluginClass: PassportQuantumLinkPlugin
+
+dependencies:
+  flutter:
+    sdk: flutter
