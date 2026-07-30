@@ -2,12 +2,16 @@
 
 ## Repository boundaries
 
-- This repository is the standalone Cake signer application source.
+- This Foundation repository is the canonical Cake signer monorepo.
+- The repository root contains the standalone Passport Prime / KeyOS app source.
+- `mobile-wallet/` contains the companion Cake Wallet mobile fork.
 - Hardware firmware must be built and flashed only from the dedicated KeyOS
   integration worktree at `/Users/admin/Documents/AI/KeyOS-cake-signer`.
 - Never build, flash, commit, or push this experiment from upstream
   `KeyOS-dev`, another application's KeyOS worktree, or a Foundation mainline
   branch.
+- Never push the mobile fork to a Cake-owned repository unless the user
+  explicitly authorizes that exact publication target.
 
 ## Passport Prime firmware safety
 

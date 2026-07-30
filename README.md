@@ -8,35 +8,31 @@ Cake remains the online/watch-only wallet. Passport Prime holds the Monero spend
 key offline, reviews unsigned transactions built by Cake, signs locally, and
 returns Cake-compatible signed transactions over QuantumLink.
 
-Current status: real hardware signing works. A transaction has been signed on
-Passport Prime, scanned back into Cake Wallet, and sent successfully. The
-QuantumLink replacement is implemented and builds end to end; full hardware
-regression testing of that transport is the next validation step.
+Current status: real hardware signing works. The QuantumLink pairing, wallet
+sync, transaction signing, address verification, wallet rename, and
+wallet-removal flows have been exercised end to end with the bundled mobile
+fork and Passport Prime.
 
-This repo is the app source snapshot. Build and hardware validation happen after
-syncing into the KeyOS integration worktree.
+This repository is the canonical project monorepo. Hardware validation happens
+after syncing the Prime app into the dedicated KeyOS integration worktree.
 
 ## Repository Map
 
-This repository is the canonical Prime-side app source:
+This repository contains both sides of the integration:
 
-- Prime signer app: <https://github.com/Foundation-Devices/passport-cake-signer>
-- Companion Cake Android fork:
-  <https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink>
-- Cake upstream target: <https://github.com/cake-tech/cake_wallet>
+- `/`: the native KeyOS signer app that runs on Passport Prime
+- `/mobile-wallet`: the Cake Wallet fork containing the Android and
+  QuantumLink integration
 
-The Prime app repository contains the KeyOS app that runs on Passport Prime. The
-Cake Android fork contains the mobile-side Passport Prime / QuantumLink changes
-that connect Cake to this app. They are intentionally separate repositories
-because one is a KeyOS app and the other is a fork of Cake Wallet intended for a
-future upstream PR.
+The mobile source is maintained here for this proof of concept. It must not be
+published to Cake-owned repositories without explicit approval.
 
 The local `KeyOS-cake-signer` checkout is only an integration/build/flash
 workspace. It is not the canonical project repository and should not be pushed
 unless explicitly approved.
 
-The previous personal mirror, `BitcoinQnA/passport-cake-signer`, is archived and
-marked as continued here.
+The retired `BitcoinQnA/cake_wallet` fork is archived. Its tested branch was
+imported into `/mobile-wallet`.
 
 ## Current Capabilities
 
