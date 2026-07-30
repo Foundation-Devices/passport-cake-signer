@@ -52,6 +52,8 @@ template = ["gui-app", "fs-generic"]
     "SubscribeWdkRequestCancelled",
     "PublishMoneroWatchCredentials",
     "PublishMoneroWalletMetadata",
+    "RequestMoneroWalletRemoval",
+    "SubscribeMoneroWalletRemovalResponse",
     "PublishMoneroKeyImages",
     "PublishMoneroSignedTransaction",
     "PublishMoneroVerifiedAddress",

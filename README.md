@@ -51,6 +51,7 @@ marked as continued here.
 | QuantumLink signed-transaction return to Cake | Working |
 | QuantumLink receive-address verification | Working |
 | QuantumLink request cancellation and stale-response suppression | Working |
+| Wallet-scoped removal from Cake with phone confirmation | Working |
 | Multiple Prime-derived wallet slots | Working |
 | Import existing 16-word Polyseed wallets | Working |
 | Import existing 24/25-word legacy Monero seeds | Working |
@@ -108,6 +109,9 @@ Each wallet must still be explicitly added to Cake from its Prime wallet screen.
 Prime remembers those wallet associations independently, while Cake reuses the
 same authenticated QuantumLink session for every enrolled wallet. Removing one
 wallet from Cake does not disconnect the device or affect the other wallets.
+Prime identifies the wallet by its immutable primary Monero address, asks Cake
+to confirm deletion on the phone, and only clears its local linked state after
+Cake returns an authenticated acknowledgement.
 
 ## Build and Validation
 

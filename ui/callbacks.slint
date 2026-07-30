@@ -95,8 +95,6 @@ export global Callbacks {
     callback clear-verify-address();
     callback verify-address-scan();
     callback verify-address-index(string, string) -> bool;
-    callback confirm-quantum-link-address();
-    callback reject-quantum-link-address();
     in-out property <string> wallet-id;
     in-out property <string> wallet-label;
     in-out property <string> wallet-kind;
@@ -123,7 +121,6 @@ export global Callbacks {
     in-out property <string> verify-detail;
     in-out property <string> verify-address;
     in-out property <bool> verify-via-quantum-link;
-    in-out property <bool> verify-confirming;
 
     // --- Signing flow -----------------------------------------------------
     // Import an unsigned_monero_tx file (built by the Cake mobile watch-only

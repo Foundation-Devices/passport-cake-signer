@@ -2,13 +2,70 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { ButtonSection, ContentSection, HeadingLg, Input,
-         PageBody, Qrcode, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
-import { CakeButton, CakeCard, CakeNavHeader, CakeStatusBanner } from "../../cake-widgets.slint";
-import { Importance, Size } from "@ui/theme.slint";
+         PageBody, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { CakeButton, CakeCard, CakeIcon, CakeNavHeader, CakeStatusBanner } from "../../cake-widgets.slint";
+import { IconSize, Importance, Size } from "@ui/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { VerifyAddressPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
 import { Cake } from "../../cake-theme.slint";
+
+component AddressBlockLine inherits Rectangle {
+    in property <string> address;
+    in property <int> row-index;
+    private property <[string]> blocks: Callbacks.format-address-row(address, row-index);
+
+    visible: blocks.length > 0;
+    height: root.visible ? 36px : 0px;
+    background: #00000000;
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: Size.sz2;
+
+        for block[index] in blocks: TextSm {
+            text: block;
+            horizontal-stretch: 1;
+            color: Math.mod(row-index * 6 + index, 2) == 0
+                ? Cake.on-surface-strong
+                : Cake.on-surface-soft;
+            bold: Math.mod(row-index * 6 + index, 2) == 0;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: clip;
+        }
+    }
+}
+
+component VerifiedAddressCard inherits Rectangle {
+    in property <string> detail;
+    in property <string> address;
+
+    height: 208px;
+    border-radius: Size.sz3;
+    background: Cake.surface-card-solid;
+    clip: true;
+
+    VerticalLayout {
+        padding-left: Size.sz4;
+        padding-right: Size.sz4;
+        padding-top: Size.sz3;
+        padding-bottom: Size.sz5;
+        spacing: Size.sz1;
+
+        TextSm {
+            text: root.detail;
+            color: Cake.on-surface-dim;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        AddressBlockLine { address: root.address; row-index: 0; }
+        AddressBlockLine { address: root.address; row-index: 1; }
+        AddressBlockLine { address: root.address; row-index: 2; }
+        AddressBlockLine { address: root.address; row-index: 3; }
+    }
+}
 
 export component VerifyAddressPagePage inherits Rectangle {
     in property <VerifyAddressPageProps> props;
@@ -43,9 +100,6 @@ export component VerifyAddressPagePage inherits Rectangle {
             CakeNavHeader {
                 title: "Verify address";
                 clicked => {
-                    if (Callbacks.verify-via-quantum-link) {
-                        Callbacks.reject-quantum-link-address();
-                    }
                     Navigate.wallet-detail-page({ replace: Callbacks.verify-via-quantum-link });
                 }
             }
@@ -68,43 +122,47 @@ export component VerifyAddressPagePage inherits Rectangle {
                             if Callbacks.verify-via-quantum-link: VerticalLayout {
                                 spacing: Size.sz3;
 
+                                HorizontalLayout {
+                                    alignment: center;
+
+                                    Rectangle {
+                                        width: 72px;
+                                        height: 72px;
+                                        border-radius: self.width / 2;
+                                        background: Callbacks.verify-matched
+                                            ? Cake.success-bg
+                                            : Cake.danger-bg;
+
+                                        CakeIcon {
+                                            name: Callbacks.verify-matched ? "check" : "alert";
+                                            size: IconSize.px32;
+                                            icon-color: Callbacks.verify-matched
+                                                ? Cake.success
+                                                : Cake.danger;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+                                    }
+                                }
+
                                 HeadingLg {
-                                    text: "Confirm receive address";
+                                    text: Callbacks.verify-title;
+                                    color: Callbacks.verify-matched ? Cake.success : Cake.danger;
                                     horizontal-alignment: center;
                                 }
 
                                 TextMd {
-                                    text: "Cake asked Prime to derive this address. Check it on both screens before confirming.";
+                                    text: Callbacks.verify-matched
+                                        ? "Passport Prime independently derived the same address from this wallet's private keys."
+                                        : "Passport Prime derived a different address. Do not use the address shown in Cake.";
                                     color: Cake.on-surface-dim;
                                     horizontal-alignment: center;
                                     wrap: word-wrap;
                                 }
 
-                                CakeCard {
-                                    VerticalLayout {
-                                        padding: Size.sz4;
-                                        spacing: Size.sz3;
-                                        TextSm {
-                                            text: Callbacks.verify-detail;
-                                            color: Cake.on-surface-dim;
-                                            horizontal-alignment: center;
-                                            wrap: word-wrap;
-                                        }
-                                        TextSm {
-                                            text: Callbacks.verify-address;
-                                            color: Cake.on-surface;
-                                            horizontal-alignment: center;
-                                            wrap: word-wrap;
-                                        }
-                                        HorizontalLayout {
-                                            alignment: center;
-                                            Qrcode {
-                                                data: Callbacks.verify-address;
-                                                width: 164px;
-                                                height: 164px;
-                                            }
-                                        }
-                                    }
+                                VerifiedAddressCard {
+                                    detail: Callbacks.verify-detail;
+                                    address: Callbacks.verify-address;
                                 }
                             }
 
@@ -150,9 +208,10 @@ export component VerifyAddressPagePage inherits Rectangle {
                                     }
                                 }
 
-                                if Callbacks.verify-ready: CakeCard {
+                                if Callbacks.verify-ready: VerticalLayout {
+                                    spacing: Size.sz3;
+
                                     VerticalLayout {
-                                        padding: Size.sz4;
                                         spacing: Size.sz3;
                                         TextLg {
                                             text: Callbacks.verify-title;
@@ -161,26 +220,11 @@ export component VerifyAddressPagePage inherits Rectangle {
                                             horizontal-alignment: center;
                                             wrap: word-wrap;
                                         }
-                                        TextSm {
-                                            text: Callbacks.verify-detail;
-                                            color: Cake.on-surface-dim;
-                                            horizontal-alignment: center;
-                                            wrap: word-wrap;
-                                        }
-                                        TextSm {
-                                            text: Callbacks.verify-address;
-                                            color: Cake.on-surface;
-                                            horizontal-alignment: center;
-                                            wrap: word-wrap;
-                                        }
-                                        if Callbacks.verify-address != "": HorizontalLayout {
-                                            alignment: center;
-                                            Qrcode {
-                                                data: Callbacks.verify-address;
-                                                width: 148px;
-                                                height: 148px;
-                                            }
-                                        }
+                                    }
+
+                                    if Callbacks.verify-address != "": VerifiedAddressCard {
+                                        detail: Callbacks.verify-detail;
+                                        address: Callbacks.verify-address;
                                     }
                                 }
                             }
@@ -195,20 +239,9 @@ export component VerifyAddressPagePage inherits Rectangle {
 
                 ButtonSection {
                     if Callbacks.verify-via-quantum-link: CakeButton {
-                        label: "Reject";
-                        importance: Importance.normal;
-                        enabled: !Callbacks.verify-confirming;
-                        clicked => {
-                            Callbacks.reject-quantum-link-address();
-                            Navigate.wallet-detail-page({ replace: true });
-                        }
-                    }
-                    if Callbacks.verify-via-quantum-link: CakeButton {
-                        label: "Confirm on Prime";
+                        label: "Done";
                         importance: Importance.primary;
-                        enabled: !Callbacks.verify-confirming;
-                        loading: Callbacks.verify-confirming;
-                        clicked => { Callbacks.confirm-quantum-link-address(); }
+                        clicked => { Navigate.wallet-detail-page({ replace: true }); }
                     }
                     if !Callbacks.verify-via-quantum-link && (!Callbacks.verify-ready || Callbacks.verify-title != "Derived address"): CakeButton {
                         label: "Show derived address";

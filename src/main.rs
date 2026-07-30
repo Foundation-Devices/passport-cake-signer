@@ -29,13 +29,15 @@ use quantum_link::{
     foundation_api::wdk::{
         WdkMoneroKeyImageSyncResponse, WdkMoneroSignTransactionResponse,
         WdkMoneroVerifyAddressRequest, WdkMoneroVerifyAddressResponse, WdkMoneroWalletMetadata,
+        WdkMoneroWalletRemovalRequest, WdkMoneroWalletRemovalResponse,
         WdkMoneroWatchCredentialsResponse, WdkRequestRejected, WDK_PROTOCOL_VERSION,
     },
     messages::{
         PublishMoneroKeyImages, PublishMoneroSignedTransaction, PublishMoneroVerifiedAddress,
         PublishMoneroWalletMetadata, PublishMoneroWatchCredentials, RejectWdkRequest,
-        SubscribeMoneroKeyImageSyncRequest, SubscribeMoneroSignTransactionRequest,
-        SubscribeMoneroVerifyAddressRequest, SubscribeMoneroWatchCredentialsRequest,
+        RequestMoneroWalletRemoval, SubscribeMoneroKeyImageSyncRequest,
+        SubscribeMoneroSignTransactionRequest, SubscribeMoneroVerifyAddressRequest,
+        SubscribeMoneroWalletRemovalResponse, SubscribeMoneroWatchCredentialsRequest,
         SubscribePairingEvent, SubscribeWdkRequestCancelled, UnpairFromEnvoy,
     },
     PairingEvent,
@@ -124,7 +126,7 @@ struct AppState {
     /// parsing/signing. Workers are not interruptible, so completion checks this
     /// set before publishing a response.
     cancelled_ql_requests: HashSet<Vec<u8>>,
-    /// Address verification waiting for explicit approval on Prime.
+    /// Address verification being derived and answered automatically by Prime.
     pending_ql_address: Option<PendingQlAddress>,
     /// Wallet explicitly armed by the user for watch-only enrollment in Cake.
     /// QuantumLink pairing is device-scoped; this keeps a later credentials
@@ -134,6 +136,11 @@ struct AppState {
     /// drops the response after Prime has computed it, Cake can retry the same
     /// logical request and Prime can replay it without another expensive pass.
     last_ql_key_image_response: Option<CachedQlKeyImageResponse>,
+    /// Monotonic correlation id for Prime-initiated wallet-removal requests.
+    ql_wallet_removal_request_id: u64,
+    /// A wallet remains linked locally until Cake acknowledges deleting the
+    /// matching watch-only wallet from the phone.
+    pending_ql_wallet_removal: Option<PendingQlWalletRemoval>,
 }
 
 struct PendingTx {
@@ -145,10 +152,11 @@ struct PendingTx {
 #[derive(Clone)]
 struct PendingQlAddress {
     request_id: Vec<u8>,
-    wallet_id: String,
     account_index: u32,
     address_index: u32,
-    address: String,
+    expected_address: String,
+    derived_address: String,
+    matched: bool,
 }
 
 #[derive(Clone)]
@@ -161,6 +169,13 @@ struct WalletArtifact {
 struct CachedQlKeyImageResponse {
     request_id: Vec<u8>,
     key_images_ur: String,
+}
+
+#[derive(Clone)]
+struct PendingQlWalletRemoval {
+    request_id: Vec<u8>,
+    wallet_id: String,
+    wallet_address: String,
 }
 
 impl AppState {
@@ -239,6 +254,8 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         pending_ql_address: None,
         pending_ql_wallet_id: None,
         last_ql_key_image_response: None,
+        ql_wallet_removal_request_id: 0,
+        pending_ql_wallet_removal: None,
     }));
 
     // Warm the CryptoNight-derived chacha file key off the GUI thread. Software
@@ -727,92 +744,6 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 verify_address_index(&ui, &state, account.as_str(), index.as_str())
             });
     }
-    {
-        let state = state.clone();
-        let weak = ui.as_weak();
-        ui.global::<Callbacks>()
-            .on_confirm_quantum_link_address(move || {
-                let Some(ui) = weak.upgrade() else { return };
-                let pending = state.lock().unwrap().pending_ql_address.take();
-                let Some(pending) = pending else {
-                    set_status(&ui, "No Cake address request is waiting.");
-                    return;
-                };
-                let wallet_is_current = state
-                    .lock()
-                    .unwrap()
-                    .active_wallet()
-                    .map(|wallet| wallet.id == pending.wallet_id)
-                    .unwrap_or(false);
-                if !wallet_is_current {
-                    spawn_local(reject_wdk_request(
-                        pending.request_id,
-                        "The selected Prime wallet changed during address verification.".into(),
-                    ))
-                    .detach();
-                    set_status(&ui, "Wallet changed. Ask Cake to verify the address again.");
-                    return;
-                }
-                ui.global::<Callbacks>().set_verify_confirming(true);
-                let state = state.clone();
-                spawn_local(async move {
-                    if take_ql_request_cancelled(&state, &pending.request_id) {
-                        queue_with_ui(|ui| {
-                            ui.global::<Callbacks>().set_verify_confirming(false);
-                            set_status(ui, "Cake cancelled address verification.");
-                        });
-                        return;
-                    }
-                    let response = PublishMoneroVerifiedAddress {
-                        response: WdkMoneroVerifyAddressResponse {
-                            protocol_version: WDK_PROTOCOL_VERSION,
-                            request_id: pending.request_id.clone(),
-                            account_index: pending.account_index,
-                            address_index: pending.address_index,
-                            address: pending.address.clone(),
-                        },
-                    };
-                    match async_archive::<QuantumLinkPermissions, _>(response).await {
-                        Ok(()) => queue_with_ui(|ui| {
-                            clear_verify_ui(ui);
-                            set_status(ui, "");
-                            ui.global::<Navigate>()
-                                .invoke_wallet_detail_page(NavigateOptions {
-                                    replace: true,
-                                    animate: Animate::None,
-                                });
-                        }),
-                        Err(e) => {
-                            log::warn!("failed to publish verified Monero address over QL: {e:?}");
-                            state.lock().unwrap().pending_ql_address = Some(pending);
-                            queue_with_ui(|ui| {
-                                ui.global::<Callbacks>().set_verify_confirming(false);
-                                set_status(
-                                    ui,
-                                    "Could not send the verified address to Cake. Try again.",
-                                );
-                            });
-                        }
-                    }
-                })
-                .detach();
-            });
-    }
-    {
-        let state = state.clone();
-        ui.global::<Callbacks>()
-            .on_reject_quantum_link_address(move || {
-                let pending = state.lock().unwrap().pending_ql_address.take();
-                if let Some(pending) = pending {
-                    spawn_local(reject_wdk_request(
-                        pending.request_id,
-                        "Address verification was rejected on Passport Prime.".into(),
-                    ))
-                    .detach();
-                }
-            });
-    }
-
     // -- animated UR frames for the signed tx (Prime → Cake) ----------------
     {
         let state = state.clone();
@@ -1357,7 +1288,9 @@ fn init_quantum_link_pairing_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
                         }
                         PairingEvent::Disconnected => {
                             {
-                                state.lock().unwrap().pending_ql_wallet_id = None;
+                                let mut st = state.lock().unwrap();
+                                st.pending_ql_wallet_id = None;
+                                st.pending_ql_wallet_removal = None;
                             }
                             if let Err(message) = clear_wallet_cake_links(&state) {
                                 log::warn!("{message}");
@@ -1440,22 +1373,37 @@ fn init_quantum_link_pairing_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
         let weak = ui.as_weak();
         ui.global::<Callbacks>()
             .on_unlink_active_wallet_from_cake(move || {
-                let result = unlink_active_wallet_from_cake(&state);
-                if let Some(ui) = weak.upgrade() {
-                    match result {
-                        Ok(()) => {
-                            refresh_wallet_ui(&ui, &state);
-                            set_status(&ui, "");
-                            true
-                        }
-                        Err(message) => {
-                            set_status(&ui, &message);
-                            false
-                        }
-                    }
-                } else {
-                    false
+                let Some(ui) = weak.upgrade() else {
+                    return false;
+                };
+                if !ui.global::<Callbacks>().get_ql_cake_ready() {
+                    set_status(
+                        &ui,
+                        "Open Cake Wallet and reconnect QuantumLink before removing this wallet.",
+                    );
+                    return false;
                 }
+                let request = match begin_wallet_removal_from_cake(&state) {
+                    Ok(request) => request,
+                    Err(message) => {
+                        set_status(&ui, &message);
+                        return false;
+                    }
+                };
+                let request_id = request.request.request_id.clone();
+                set_status(&ui, "Confirm wallet removal in Cake Wallet.");
+                let state = state.clone();
+                spawn_local(async move {
+                    if let Err(e) = async_archive::<QuantumLinkPermissions, _>(request).await {
+                        clear_pending_wallet_removal(&state, &request_id);
+                        log::warn!("failed to request Monero wallet removal over QL: {e:?}");
+                        queue_status(
+                            "Could not ask Cake Wallet to remove this wallet. Reconnect and try again.",
+                        );
+                    }
+                })
+                .detach();
+                true
             });
     }
 
@@ -1524,6 +1472,35 @@ fn ql_status_text(
 }
 
 fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
+    {
+        let state = state.clone();
+        spawn_local(async move {
+            let mut events = subscribe_archive::<QuantumLinkPermissions, _>(
+                SubscribeMoneroWalletRemovalResponse,
+            );
+            while let Some(response) = events.next().await {
+                match apply_wallet_removal_response(&state, response) {
+                    Ok(WalletRemovalOutcome::Removed) => {
+                        let ui_state = state.clone();
+                        queue_with_ui(move |ui| refresh_wallet_ui(ui, &ui_state));
+                        queue_status("Wallet removed from Cake Wallet.");
+                    }
+                    Ok(WalletRemovalOutcome::Kept) => {
+                        queue_status("Cake Wallet kept this wallet linked.");
+                    }
+                    Ok(WalletRemovalOutcome::Stale) => {
+                        log::warn!("ignored stale or mismatched Monero wallet-removal response");
+                    }
+                    Err(message) => {
+                        log::warn!("{message}");
+                        queue_status(message);
+                    }
+                }
+            }
+        })
+        .detach();
+    }
+
     {
         let state = state.clone();
         spawn_local(async move {
@@ -1702,6 +1679,9 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
             while let Some(request) = events.next().await {
                 begin_ql_request(&state, &request.request_id);
                 let request_id = request.request_id.clone();
+                let expected_address = request.address.clone();
+                let account_index = request.account_index;
+                let address_index = request.address_index;
                 let state_for_worker = state.clone();
                 let result =
                     spawn_worker(
@@ -1714,33 +1694,125 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
                             state.lock().unwrap().pending_ql_address = None;
                             continue;
                         }
-                        let ui_state = state.clone();
-                        queue_with_ui(move |ui| {
-                            refresh_wallet_ui(ui, &ui_state);
-                            clear_verify_ui(ui);
-                            ui.global::<Callbacks>().set_verify_via_quantum_link(true);
-                            set_verify_result(
-                                ui,
-                                true,
-                                "Confirm receive address",
-                                &format!(
-                                    "{} · account {} / subaddress {}",
-                                    ui.global::<Callbacks>().get_wallet_label(),
-                                    pending.account_index,
-                                    pending.address_index
-                                ),
-                                &pending.address,
-                            );
-                            ui.global::<Navigate>()
-                                .invoke_verify_address_page(NavigateOptions {
-                                    replace: false,
-                                    animate: Animate::None,
-                                });
-                        });
+                        let detail = format!(
+                            "Account {} / subaddress {}",
+                            pending.account_index, pending.address_index
+                        );
+                        if pending.matched {
+                            let response = PublishMoneroVerifiedAddress {
+                                response: WdkMoneroVerifyAddressResponse {
+                                    protocol_version: WDK_PROTOCOL_VERSION,
+                                    request_id: pending.request_id.clone(),
+                                    account_index: pending.account_index,
+                                    address_index: pending.address_index,
+                                    address: pending.derived_address.clone(),
+                                },
+                            };
+                            match async_archive::<QuantumLinkPermissions, _>(response).await {
+                                Ok(()) => {
+                                    state.lock().unwrap().pending_ql_address = None;
+                                    let ui_state = state.clone();
+                                    queue_with_ui(move |ui| {
+                                        refresh_wallet_ui(ui, &ui_state);
+                                        clear_verify_ui(ui);
+                                        ui.global::<Callbacks>()
+                                            .set_verify_via_quantum_link(true);
+                                        set_verify_result(
+                                            ui,
+                                            true,
+                                            "Address verified",
+                                            &detail,
+                                            &pending.derived_address,
+                                        );
+                                        ui.global::<Navigate>().invoke_verify_address_page(
+                                            NavigateOptions {
+                                                replace: false,
+                                                animate: Animate::None,
+                                            },
+                                        );
+                                    });
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "failed to publish verified Monero address over QL: {e:?}"
+                                    );
+                                    state.lock().unwrap().pending_ql_address = None;
+                                    let ui_state = state.clone();
+                                    queue_with_ui(move |ui| {
+                                        refresh_wallet_ui(ui, &ui_state);
+                                        clear_verify_ui(ui);
+                                        ui.global::<Callbacks>()
+                                            .set_verify_via_quantum_link(true);
+                                        set_verify_result(
+                                            ui,
+                                            false,
+                                            "Verification failed",
+                                            "Prime derived the address but could not return the result to Cake.",
+                                            &pending.derived_address,
+                                        );
+                                        ui.global::<Navigate>().invoke_verify_address_page(
+                                            NavigateOptions {
+                                                replace: false,
+                                                animate: Animate::None,
+                                            },
+                                        );
+                                    });
+                                }
+                            }
+                        } else {
+                            state.lock().unwrap().pending_ql_address = None;
+                            reject_wdk_request(
+                                pending.request_id,
+                                "Passport Prime derived a different address for this wallet index."
+                                    .into(),
+                            )
+                            .await;
+                            let ui_state = state.clone();
+                            queue_with_ui(move |ui| {
+                                refresh_wallet_ui(ui, &ui_state);
+                                clear_verify_ui(ui);
+                                ui.global::<Callbacks>().set_verify_via_quantum_link(true);
+                                set_verify_result(
+                                    ui,
+                                    false,
+                                    "Address mismatch",
+                                    &detail,
+                                    &pending.expected_address,
+                                );
+                                ui.global::<Navigate>().invoke_verify_address_page(
+                                    NavigateOptions {
+                                        replace: false,
+                                        animate: Animate::None,
+                                    },
+                                );
+                            });
+                        }
                     }
                     Err(message) => {
                         if !take_ql_request_cancelled(&state, &request_id) {
+                            state.lock().unwrap().pending_ql_address = None;
                             reject_wdk_request(request_id, message).await;
+                            let ui_state = state.clone();
+                            queue_with_ui(move |ui| {
+                                refresh_wallet_ui(ui, &ui_state);
+                                clear_verify_ui(ui);
+                                ui.global::<Callbacks>().set_verify_via_quantum_link(true);
+                                set_verify_result(
+                                    ui,
+                                    false,
+                                    "Verification failed",
+                                    &format!(
+                                        "Account {account_index} / subaddress {address_index}"
+                                    ),
+                                    &expected_address,
+                                );
+                                ui.global::<Navigate>().invoke_verify_address_page(
+                                    NavigateOptions {
+                                        replace: false,
+                                        animate: Animate::None,
+                                    },
+                                );
+                            });
                         }
                     }
                 }
@@ -1911,15 +1983,84 @@ fn mark_wallet_cake_linked(state: &Arc<Mutex<AppState>>, wallet_id: &str) -> Res
     Ok(())
 }
 
-fn unlink_active_wallet_from_cake(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
+fn begin_wallet_removal_from_cake(
+    state: &Arc<Mutex<AppState>>,
+) -> Result<RequestMoneroWalletRemoval, String> {
+    let mut st = state.lock().unwrap();
+    let (wallet_id, wallet_name, wallet_address) = {
+        let wallet = st.active_wallet().map_err(|e| format!("{e}"))?;
+        if wallet.archived {
+            return Err("Restore this wallet before removing it from Cake.".into());
+        }
+        if !wallet.cake_linked {
+            return Err("This wallet is not linked to Cake Wallet.".into());
+        }
+        let keys = wallet.keys(&st.app_seed).map_err(|e| format!("{e}"))?;
+        (
+            wallet.id.clone(),
+            wallet.label.clone(),
+            keys.primary_address(st.network),
+        )
+    };
+    st.ql_wallet_removal_request_id = st.ql_wallet_removal_request_id.wrapping_add(1);
+    let mut request_id = b"cake-rm!".to_vec();
+    request_id.extend_from_slice(&st.ql_wallet_removal_request_id.to_be_bytes());
+    st.pending_ql_wallet_removal = Some(PendingQlWalletRemoval {
+        request_id: request_id.clone(),
+        wallet_id,
+        wallet_address: wallet_address.clone(),
+    });
+    Ok(RequestMoneroWalletRemoval {
+        request: WdkMoneroWalletRemovalRequest {
+            protocol_version: WDK_PROTOCOL_VERSION,
+            request_id,
+            wallet_address,
+            wallet_name,
+        },
+    })
+}
+
+fn clear_pending_wallet_removal(state: &Arc<Mutex<AppState>>, request_id: &[u8]) {
+    let mut st = state.lock().unwrap();
+    if st
+        .pending_ql_wallet_removal
+        .as_ref()
+        .is_some_and(|pending| pending.request_id == request_id)
+    {
+        st.pending_ql_wallet_removal = None;
+    }
+}
+
+enum WalletRemovalOutcome {
+    Removed,
+    Kept,
+    Stale,
+}
+
+fn apply_wallet_removal_response(
+    state: &Arc<Mutex<AppState>>,
+    response: WdkMoneroWalletRemovalResponse,
+) -> Result<WalletRemovalOutcome, String> {
     let save = {
         let mut st = state.lock().unwrap();
-        let wallet_id = st.active_wallet().map_err(|e| format!("{e}"))?.id.clone();
+        let Some(pending) = st.pending_ql_wallet_removal.take() else {
+            return Ok(WalletRemovalOutcome::Stale);
+        };
+        if response.protocol_version != WDK_PROTOCOL_VERSION
+            || response.request_id != pending.request_id
+            || response.wallet_address != pending.wallet_address
+        {
+            st.pending_ql_wallet_removal = Some(pending);
+            return Ok(WalletRemovalOutcome::Stale);
+        }
+        if !response.removed {
+            return Ok(WalletRemovalOutcome::Kept);
+        }
         let changed = st
             .wallet_book
-            .set_cake_linked(&wallet_id, false)
+            .set_cake_linked(&pending.wallet_id, false)
             .map_err(|e| format!("{e}"))?;
-        if st.pending_ql_wallet_id.as_deref() == Some(wallet_id.as_str()) {
+        if st.pending_ql_wallet_id.as_deref() == Some(pending.wallet_id.as_str()) {
             st.pending_ql_wallet_id = None;
         }
         changed.then(|| (st.data_dir.clone(), st.wallet_book.clone()))
@@ -1929,7 +2070,7 @@ fn unlink_active_wallet_from_cake(state: &Arc<Mutex<AppState>>) -> Result<(), St
         save_wallet_book(&data_dir, &book)
             .map_err(|e| format!("Could not remove this wallet from Cake: {e}"))?;
     }
-    Ok(())
+    Ok(WalletRemovalOutcome::Removed)
 }
 
 fn clear_wallet_cake_links(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
@@ -2130,13 +2271,13 @@ fn stage_ql_address_request(
                             .into(),
                     );
                 }
-                let address =
+                let derived_address =
                     keys.address_at(st.network, request.account_index, request.address_index);
-                matched = Some((wallet.id.clone(), address));
+                matched = Some((wallet.id.clone(), derived_address));
                 break;
             }
         }
-        let Some((wallet_id, address)) = matched else {
+        let Some((wallet_id, derived_address)) = matched else {
             return Err("This address request does not match any active Prime wallet.".into());
         };
 
@@ -2146,10 +2287,11 @@ fn stage_ql_address_request(
             .map_err(|e| format!("{e}"))?;
         let pending = PendingQlAddress {
             request_id: request.request_id,
-            wallet_id,
             account_index: request.account_index,
             address_index: request.address_index,
-            address,
+            matched: derived_address == request.address,
+            expected_address: request.address,
+            derived_address,
         };
         st.pending_ql_address = Some(pending.clone());
         (pending, (st.data_dir.clone(), st.wallet_book.clone()))
@@ -2506,7 +2648,6 @@ fn clear_verify_ui(ui: &AppWindow) {
     cb.set_verify_detail("".into());
     cb.set_verify_address("".into());
     cb.set_verify_via_quantum_link(false);
-    cb.set_verify_confirming(false);
 }
 
 fn refresh_wallet_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
@@ -3622,6 +3763,30 @@ fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
 mod tests {
     use super::*;
 
+    fn wallet_removal_state(data_dir: PathBuf) -> Arc<Mutex<AppState>> {
+        let mut wallet_book = wallets::WalletBook::new(PAIR_RESTORE_HEIGHT);
+        wallet_book.set_cake_linked("slot-0", true).unwrap();
+        Arc::new(Mutex::new(AppState {
+            app_seed: [7; 32],
+            network: Network::Mainnet,
+            data_dir,
+            wallet_book,
+            pending: None,
+            last_signed: None,
+            last_keyimages: None,
+            signing: false,
+            tx_request_id: 0,
+            address_cache: HashMap::new(),
+            verify_request_id: 0,
+            cancelled_ql_requests: HashSet::new(),
+            pending_ql_address: None,
+            pending_ql_wallet_id: None,
+            last_ql_key_image_response: None,
+            ql_wallet_removal_request_id: 0,
+            pending_ql_wallet_removal: None,
+        }))
+    }
+
     fn dummy_output_entry(n: u8) -> monero::keyimage::OutEntry {
         monero::keyimage::OutEntry {
             pubkey: [n; 32],
@@ -3708,6 +3873,60 @@ mod tests {
     #[test]
     fn missing_wallet_artifact_has_no_qr_payload() {
         assert_eq!(artifact_bytes_for_wallet("slot-0", &None), None);
+    }
+
+    #[test]
+    fn wallet_removal_waits_for_matching_cake_acknowledgement() {
+        let data_dir =
+            std::env::temp_dir().join(format!("cake-wallet-removal-test-{}", std::process::id()));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let state = wallet_removal_state(data_dir.clone());
+
+        let request = begin_wallet_removal_from_cake(&state).unwrap().request;
+        assert_eq!(request.request_id.len(), 16);
+        assert!(state.lock().unwrap().active_wallet().unwrap().cake_linked);
+
+        let stale = apply_wallet_removal_response(
+            &state,
+            WdkMoneroWalletRemovalResponse {
+                protocol_version: WDK_PROTOCOL_VERSION,
+                request_id: request.request_id.clone(),
+                wallet_address: "wrong-wallet".into(),
+                removed: true,
+            },
+        )
+        .unwrap();
+        assert!(matches!(stale, WalletRemovalOutcome::Stale));
+        assert!(state.lock().unwrap().active_wallet().unwrap().cake_linked);
+
+        let kept = apply_wallet_removal_response(
+            &state,
+            WdkMoneroWalletRemovalResponse {
+                protocol_version: WDK_PROTOCOL_VERSION,
+                request_id: request.request_id,
+                wallet_address: request.wallet_address,
+                removed: false,
+            },
+        )
+        .unwrap();
+        assert!(matches!(kept, WalletRemovalOutcome::Kept));
+        assert!(state.lock().unwrap().active_wallet().unwrap().cake_linked);
+
+        let request = begin_wallet_removal_from_cake(&state).unwrap().request;
+        let removed = apply_wallet_removal_response(
+            &state,
+            WdkMoneroWalletRemovalResponse {
+                protocol_version: WDK_PROTOCOL_VERSION,
+                request_id: request.request_id,
+                wallet_address: request.wallet_address,
+                removed: true,
+            },
+        )
+        .unwrap();
+        assert!(matches!(removed, WalletRemovalOutcome::Removed));
+        assert!(!state.lock().unwrap().active_wallet().unwrap().cake_linked);
+
+        std::fs::remove_dir_all(data_dir).unwrap();
     }
 
     #[test]
