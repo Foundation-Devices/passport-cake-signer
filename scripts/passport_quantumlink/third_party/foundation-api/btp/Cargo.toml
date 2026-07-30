@@ -1,0 +1,16 @@
+[package]
+name = "btp"
+version = "0.1.0"
+edition = "2021"
+homepage.workspace = true
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+consts = { git = "https://github.com/Foundation-Devices/prime-ble-firmware.git", features = [
+    "dle",
+] }
+getrandom = { workspace = true }
+thiserror = "2"
+
+[dev-dependencies]
+rand = "0.9"
