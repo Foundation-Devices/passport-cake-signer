@@ -1,0 +1,6 @@
+---
+source: api/tests/golden_tests.rs
+assertion_line: 111
+expression: hex.clone()
+---
+821837a40001015055555555555555555555555555555555026f6d2f3834272f31272f30272f302f300301

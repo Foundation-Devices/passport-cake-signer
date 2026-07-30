@@ -1,0 +1,30 @@
+[package]
+name = "quantumlink-mobile"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "QuantumLink client core for the Cake Wallet Passport Prime bridge."
+
+[lib]
+name = "quantumlink_mobile"
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "1"
+uniffi = { version = "0.28", features = ["cli"] }
+# Foundation's QuantumLink protocol crates (GSTP/dCBOR + BLE chunking).
+# Default features only: std build, no `keyos` (rkyv) and no `envoy` (flutter_rust_bridge).
+foundation-api = { path = "../third_party/foundation-api/api" }
+btp = { path = "../third_party/foundation-api/btp" }
+
+# Force the portable `clean` pqcrypto implementation: the default `neon`/`sha3`
+# aarch64 paths emit ARMv8.2 SHA3 instructions that Google Tensor cores
+# (Pixel 6a/7) don't implement → SIGILL in MLDSA/MLKEM keygen.
+[patch.crates-io]
+pqcrypto-mldsa = { path = "../third_party/pqcrypto-patch/pqcrypto-mldsa" }
+pqcrypto-mlkem = { path = "../third_party/pqcrypto-patch/pqcrypto-mlkem" }

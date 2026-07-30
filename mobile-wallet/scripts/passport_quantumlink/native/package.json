@@ -1,0 +1,11 @@
+{
+  "name": "@foundationdevices/passport-quantumlink",
+  "version": "0.1.0",
+  "description": "Passport Prime QuantumLink transport for the Tether WDK Android POC",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}
