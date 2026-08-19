@@ -4,7 +4,7 @@ app-name = "gui-app-cake-signer"
 friendly-app-name = "Cake Wallet Signer"
 launcher-app-name = "Cake"
 description = "A Monero cold signer and Cake Wallet companion for Passport Prime."
-icon = "resources/icon.svg"
+icon = "resources/icon.png"
 theme = "resources/theme.json"
 # Stable identity: changing this changes every app-seed-derived Monero wallet.
 app-id = "0x63616b652d786d722d7369676e657221"
