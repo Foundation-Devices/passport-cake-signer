@@ -49,13 +49,16 @@ use quantum_link::{
 };
 use slint_keyos_platform::{
     app_ui2,
+    gui_server_api::{
+        navigation::qrscanner::{MatchedQrResult, ScanQrResult},
+        InputMessage,
+    },
     slint::{ComponentHandle, ModelRc, SharedString, VecModel},
 };
 #[cfg(foundation_internal_quantum_link)]
 use slint_keyos_platform::{
-    gui_server_api::navigation::qrscanner::{ScanQrOptions, ScanQrResult},
-    navigation::open_qr_scanner,
-    spawn_local, spawn_worker,
+    gui_server_api::navigation::qrscanner::ScanQrOptions, navigation::open_qr_scanner, spawn_local,
+    spawn_worker,
 };
 
 // `app_ui2!` injects the permission-parameterized `FileSystem` alias (via
@@ -218,7 +221,7 @@ impl AppState {
     }
 }
 
-fn app_main(_cx: AppContext, ui: AppWindow) {
+fn app_main(cx: AppContext, ui: AppWindow) {
     log_server::init_wait(env!("CARGO_CRATE_NAME")).unwrap();
     log::set_max_level(log::LevelFilter::Info);
     log::info!("Starting Cake Wallet Signer");
@@ -1156,6 +1159,39 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     }
 
     init_quantum_link(&state);
+
+    // Launcher universal-QR handoff. This is distinct from opening the system
+    // scanner ourselves: GetPendingNavRequest is third-party-safe and is added
+    // automatically by the qr-match-rules entry in app-config.toml.
+    cx.set_input_handler({
+        let gui = cx.gui.clone();
+        let weak = ui.as_weak();
+        let state = state.clone();
+        move |input| {
+            if input.msg != InputMessage::NavigationFocused {
+                return;
+            }
+            let Some(ui) = weak.upgrade() else { return };
+            let Ok(Some(bytes)) = gui.navigate_pending() else {
+                log::warn!("Launcher QR handoff focused without a pending request");
+                return;
+            };
+            let Some(result) = MatchedQrResult::from_slice(&bytes) else {
+                set_status(&ui, "Could not read the Launcher QR handoff.");
+                return;
+            };
+            match launcher_unsigned_tx_payload(result) {
+                Ok(raw) => {
+                    ui.global::<Navigate>().invoke_review_page(NavigateOptions {
+                        replace: false,
+                        animate: Animate::None,
+                    });
+                    load_unsigned_tx_for_wallet(&ui, &state, raw);
+                }
+                Err(message) => set_status(&ui, message),
+            }
+        }
+    });
 
     // No default status line — it only appears for real errors/progress.
     ui.run().expect("UI running");
@@ -2346,6 +2382,18 @@ async fn reject_wdk_request(request_id: Vec<u8>, message: String) {
     };
     if let Err(e) = async_archive::<QuantumLinkPermissions, _>(rejection).await {
         log::warn!("failed to reject WDK request over QL: {e:?}");
+    }
+}
+
+fn launcher_unsigned_tx_payload(result: MatchedQrResult) -> Result<Vec<u8>, &'static str> {
+    match result.scan_result {
+        ScanQrResult::Ur2 { ur_type, data, .. }
+            if ur_type.eq_ignore_ascii_case(qr::UR_TX_UNSIGNED) =>
+        {
+            qr::ur_payload_limited(&data, MAX_TXSET_QR_BYTES)
+        }
+        ScanQrResult::Ur2 { .. } => Err("That UR is not a Monero unsigned transaction."),
+        _ => Err("Cake transaction handoff requires an xmr-txunsigned UR."),
     }
 }
 
@@ -3648,6 +3696,28 @@ fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_launcher_unsigned_transaction_handoff() {
+        let raw = vec![0x42; 32];
+        let wrapped = minicbor::to_vec(minicbor::bytes::ByteVec::from(raw.clone())).unwrap();
+        let result = MatchedQrResult {
+            scan_result: ScanQrResult::new_ur2(qr::UR_TX_UNSIGNED.to_owned(), &wrapped),
+            matched_rules: Vec::new(),
+        };
+
+        assert_eq!(launcher_unsigned_tx_payload(result).unwrap(), raw);
+    }
+
+    #[test]
+    fn rejects_unexpected_launcher_qr_handoff() {
+        let result = MatchedQrResult {
+            scan_result: ScanQrResult::new_qr(b"not a transaction"),
+            matched_rules: Vec::new(),
+        };
+
+        assert!(launcher_unsigned_tx_payload(result).is_err());
+    }
 
     #[cfg(foundation_internal_quantum_link)]
     fn wallet_removal_state(data_dir: PathBuf) -> Arc<Mutex<AppState>> {

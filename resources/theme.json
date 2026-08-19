@@ -1,5 +1,32 @@
 {
+  "version": 1,
   "id": "app_theme",
   "name": "Cake Wallet Signer",
-  "parent": "base_theme"
+  "parent": "base_theme",
+  "tokens": {
+    "colors": {
+      "light": {
+        "primary": "#91B0FF",
+        "primary-pressed": "#7F98EA",
+        "secondary": "#334C8C",
+        "danger": "#FFB4AB",
+        "surface": "#24335B",
+        "background": "#1B284A",
+        "text": "#F4F7FF",
+        "text-muted": "#8C9FBB",
+        "transparent": "#00000000"
+      },
+      "dark": {
+        "primary": "#91B0FF",
+        "primary-pressed": "#7F98EA",
+        "secondary": "#334C8C",
+        "danger": "#FFB4AB",
+        "surface": "#24335B",
+        "background": "#1B284A",
+        "text": "#F4F7FF",
+        "text-muted": "#8C9FBB",
+        "transparent": "#00000000"
+      }
+    }
+  }
 }

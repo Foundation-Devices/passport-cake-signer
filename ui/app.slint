@@ -3,7 +3,7 @@
 
 import { Router } from "gen/router.slint";
 import { Callbacks } from "callbacks.slint";
-import { CurrentTheme, Images, Utils, Palettes, Theme, UISize } from "compat/theme.slint";
+import { Images, Utils, Theme, UISize } from "compat/theme.slint";
 import { TR } from "compat/i18n.slint";
 import { Cake } from "cake-theme.slint";
 
@@ -13,12 +13,8 @@ export component AppWindow inherits Window {
     preferred-height: UISize.screen-height;
     background: Cake.background;
 
-    init => {
-        CurrentTheme.palette = Palettes.dark;
-    }
-
     Router { }
 }
 
 export * from "gen/exports.slint";
-export { Callbacks, CurrentTheme, Images, Utils, TR, Theme }
+export { Callbacks, Images, Utils, TR, Theme }

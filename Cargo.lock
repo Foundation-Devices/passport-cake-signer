@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "gui-app-cake-signer"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -2025,7 +2025,7 @@ name = "gui-server-api"
 version = "0.1.0"
 dependencies = [
  "app-manifest",
- "hex-literal 0.4.1",
+ "hex-literal",
  "keyos",
  "log",
  "num-derive",
@@ -2167,12 +2167,6 @@ name = "hex-literal"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
-
-[[package]]
-name = "hex-literal"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
 
 [[package]]
 name = "hmac"
@@ -3268,7 +3262,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f65735f9e73adc203417d2e05352aef71d7e832ec090f65de26c96c9ec563aa5"
 dependencies = [
  "digest",
- "hex-literal 0.4.1",
+ "hex-literal",
  "ppv-lite86",
 ]
 
@@ -3757,7 +3751,7 @@ dependencies = [
 [[package]]
 name = "monero-address"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "monero-base58",
  "monero-ed25519",
@@ -3770,7 +3764,7 @@ dependencies = [
 [[package]]
 name = "monero-base58"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "monero-primitives",
  "std-shims 0.1.5",
@@ -3779,7 +3773,7 @@ dependencies = [
 [[package]]
 name = "monero-borromean"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "monero-ed25519",
@@ -3791,7 +3785,7 @@ dependencies = [
 [[package]]
 name = "monero-bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "monero-bulletproofs-generators",
@@ -3807,7 +3801,7 @@ dependencies = [
 [[package]]
 name = "monero-bulletproofs-generators"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "monero-ed25519",
@@ -3819,7 +3813,7 @@ dependencies = [
 [[package]]
 name = "monero-clsag"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "monero-ed25519",
@@ -3834,7 +3828,7 @@ dependencies = [
 [[package]]
 name = "monero-ed25519"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "crypto-bigint",
  "curve25519-dalek",
@@ -3849,7 +3843,7 @@ dependencies = [
 [[package]]
 name = "monero-interface"
 version = "0.2.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "hex",
  "monero-oxide",
@@ -3861,7 +3855,7 @@ dependencies = [
 [[package]]
 name = "monero-io"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "std-shims 0.1.5",
 ]
@@ -3869,7 +3863,7 @@ dependencies = [
 [[package]]
 name = "monero-mlsag"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "monero-ed25519",
@@ -3882,10 +3876,10 @@ dependencies = [
 [[package]]
 name = "monero-oxide"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
- "hex-literal 1.1.0",
+ "hex-literal",
  "monero-borromean",
  "monero-bulletproofs",
  "monero-clsag",
@@ -3900,7 +3894,7 @@ dependencies = [
 [[package]]
 name = "monero-primitives"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "sha3",
 ]
@@ -3908,7 +3902,7 @@ dependencies = [
 [[package]]
 name = "monero-seed"
 version = "0.1.0"
-source = "git+https://github.com/kayabaNerve/monero-wallet-util#797fe701a6f9e99ae614c49479bb981de1afe8ec"
+source = "git+https://github.com/kayabaNerve/monero-wallet-util?rev=797fe701a6f9e99ae614c49479bb981de1afe8ec#797fe701a6f9e99ae614c49479bb981de1afe8ec"
 dependencies = [
  "curve25519-dalek",
  "rand_core 0.6.4",
@@ -3919,7 +3913,7 @@ dependencies = [
 [[package]]
 name = "monero-wallet"
 version = "0.2.0"
-source = "git+https://github.com/monero-oxide/monero-oxide.git#731657ae3385be667abb556266369a497bc86f13"
+source = "git+https://github.com/monero-oxide/monero-oxide.git?rev=731657ae3385be667abb556266369a497bc86f13#731657ae3385be667abb556266369a497bc86f13"
 dependencies = [
  "curve25519-dalek",
  "hex",
@@ -4892,7 +4886,7 @@ dependencies = [
 [[package]]
 name = "polyseed"
 version = "0.1.0"
-source = "git+https://github.com/kayabaNerve/monero-wallet-util#797fe701a6f9e99ae614c49479bb981de1afe8ec"
+source = "git+https://github.com/kayabaNerve/monero-wallet-util?rev=797fe701a6f9e99ae614c49479bb981de1afe8ec#797fe701a6f9e99ae614c49479bb981de1afe8ec"
 dependencies = [
  "pbkdf2",
  "rand_core 0.6.4",

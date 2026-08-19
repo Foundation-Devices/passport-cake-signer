@@ -1,20 +1,26 @@
+// Thin compatibility layouts for the former in-tree widget names. Interactive
+// controls delegate to Foundation UI2; typography and geometry use UI2 tokens.
 import { Importance, Size, IconSize, UISize, Palette, Utils } from "theme.slint";
+import { Theme, ButtonVariant, ControlSize } from "@ui/theme.slint";
+import { Button as UiButton } from "@ui/button.slint";
+import { Input as UiInput, InputVariant } from "@ui/input.slint";
+import { Spinner as UiSpinner } from "@ui/spinner.slint";
 
 component CompatText inherits Text {
     color: Palette.content-primary;
     wrap: word-wrap;
     vertical-alignment: top;
     horizontal-alignment: left;
-    font-family: "Inter";
+    font-family: Theme.font-primary;
     in property <bool> bold: false;
-    font-weight: bold ? 600 : 400;
+    font-weight: bold ? Theme.font-weight-semibold : Theme.font-weight-normal;
 }
-export component TextSm inherits CompatText { font-size: 16px; }
-export component TextMd inherits CompatText { font-size: 18px; }
-export component TextLg inherits CompatText { font-size: 20px; }
-export component HeadingMd inherits CompatText { font-size: 24px; font-weight: 600; }
-export component HeadingLg inherits CompatText { font-size: 30px; font-weight: 600; }
-export component HeadingXl inherits CompatText { font-size: 36px; font-weight: 600; }
+export component TextSm inherits CompatText { font-size: Theme.font-size-subtitle; }
+export component TextMd inherits CompatText { font-size: Theme.font-size-body; }
+export component TextLg inherits CompatText { font-size: Theme.font-size-sm; }
+export component HeadingMd inherits CompatText { font-size: Theme.font-size-title; font-weight: Theme.font-weight-semibold; }
+export component HeadingLg inherits CompatText { font-size: Theme.font-size-title + Theme.spacing-sm; font-weight: Theme.font-weight-semibold; }
+export component HeadingXl inherits CompatText { font-size: Theme.font-size-title + Theme.spacing-md; font-weight: Theme.font-weight-semibold; }
 
 export component BasePage inherits Rectangle {
     x: 0px;
@@ -60,7 +66,7 @@ export component AppHeader inherits Rectangle {
     in property <string> title;
     in property <brush> title-color: Palette.content-primary;
     in property <length> side-padding: Size.sz4;
-    height: Size.sz16;
+    height: Theme.control-size-lg;
     HeadingMd {
         text: root.title; color: root.title-color; horizontal-alignment: center;
         vertical-alignment: center; width: parent.width; height: parent.height;
@@ -78,11 +84,24 @@ export component Button inherits Rectangle {
     in property <bool> loading: false;
     in property <bool> force-pressed: false;
     callback clicked(string);
-    height: Size.sz15;
-    border-radius: Size.sz6;
-    background: !enabled ? Palette.background-disabled : importance == Importance.primary ? Palette.background-brand : importance == Importance.negative ? Palette.background-negative : Palette.background-primary-alternative;
-    TextLg { text: root.label; horizontal-alignment: center; vertical-alignment: center; width: parent.width; height: parent.height; bold: true; }
-    TouchArea { enabled: root.enabled; clicked => { root.clicked(root.id); } }
+    height: Theme.control-size-md + Theme.spacing-xs;
+
+    UiButton {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        size: ControlSize.md;
+        full-width: true;
+        disabled: !root.enabled;
+        loading: root.loading;
+        force-pressed: root.force-pressed;
+        variant: root.importance == Importance.primary ? ButtonVariant.primary
+            : root.importance == Importance.negative ? ButtonVariant.danger
+            : root.importance == Importance.tertiary ? ButtonVariant.tertiary
+            : root.importance == Importance.secondary ? ButtonVariant.secondary
+            : ButtonVariant.ghost;
+        clicked => { root.clicked(root.id); }
+    }
 }
 
 export component Input inherits Rectangle {
@@ -90,54 +109,49 @@ export component Input inherits Rectangle {
     in property <string> placeholder;
     in property <bool> show-clear-btn: true;
     in property <InputType> input-type: InputType.text;
+    // Kept for source compatibility; UI2 delegates the keyboard action label.
     in property <string> accept-button-text;
     callback accepted(string);
     callback edited(string);
-    height: Size.sz14;
-    border-radius: Size.sz6;
-    border-width: 1px;
-    border-color: input.has-focus ? Palette.border-focus : Palette.border-tertiary;
-    background: Palette.background-primary-alternative;
-    forward-focus: input;
-    if input.text == "": TextMd {
-        text: root.placeholder; color: Palette.content-disabled;
-        x: Size.sz4; width: parent.width - Size.sz8; height: parent.height;
-        vertical-alignment: center;
-    }
-    input := TextInput {
-        text <=> root.text; input-type: root.input-type;
-        accept-button-text: root.accept-button-text;
-        x: Size.sz4; width: parent.width - Size.sz8; height: parent.height;
-        color: Palette.content-primary; font-family: "Inter"; font-size: 18px;
-        vertical-alignment: center;
-        accepted() => { root.accepted(self.text); }
-        edited() => { root.edited(self.text); }
+    height: Theme.control-size-md;
+
+    UiInput {
+        width: parent.width;
+        height: parent.height;
+        value <=> root.text;
+        placeholder: root.placeholder;
+        input-type: root.input-type;
+        clearable: root.show-clear-btn;
+        variant: InputVariant.outlined;
+        size: ControlSize.md;
+        changed(value) => { root.edited(value); }
+        submitted(value) => { root.accepted(value); }
     }
 }
 
 export component Panel inherits Rectangle {
-    border-color: Palette.border-tertiary;
-    border-width: 1px;
-    border-radius: Size.sz6;
-    background: Palette.background-primary;
+    border-color: Theme.palette-border;
+    border-width: Theme.border-width-sm;
+    border-radius: Theme.radius-lg;
+    background: Theme.palette-surface;
     clip: true;
     @children
 }
 
 export component Modal inherits Rectangle {
     in property <string> icon: "info";
-    in property <brush> icon-color: Palette.content-brand;
+    in property <brush> icon-color: Theme.palette-primary;
     in property <string> title;
     in property <string> text;
-    background: Palette.overlay;
+    background: Theme.palette-background.with-alpha(0.90);
     TouchArea { }
     Panel {
-        width: UISize.modal-width; height: 470px;
+        width: UISize.modal-width; height: Theme.control-size-lg * 7 + Theme.spacing-lg + Theme.spacing-sm;
         x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
         VerticalLayout {
-            padding: Size.sz6; spacing: Size.sz6;
+            padding: Theme.spacing-xl; spacing: Theme.spacing-xl;
             HeadingMd { text: root.title; horizontal-alignment: center; }
-            TextSm { text: root.text; color: Palette.content-secondary; horizontal-alignment: center; }
+            TextSm { text: root.text; color: Theme.palette-muted; horizontal-alignment: center; }
             Rectangle { vertical-stretch: 1; }
             @children
         }
@@ -146,15 +160,15 @@ export component Modal inherits Rectangle {
 
 export component OverlayMenu inherits Rectangle {
     callback touched-off();
-    background: Palette.overlay;
+    background: Theme.palette-background.with-alpha(0.90);
     TouchArea { width: parent.width; height: parent.height; clicked => { root.touched-off(); } }
     Rectangle {
-        width: 320px;
-        height: 360px;
-        x: parent.width - self.width - Size.sz6;
-        y: UISize.control-center-status-bar-height + Size.sz14;
-        border-radius: Size.sz6;
-        background: Palette.background-primary;
+        width: Theme.control-size-lg * 5;
+        height: Theme.control-size-lg * 5 + Theme.control-size-sm - Theme.spacing-sm;
+        x: parent.width - self.width - Theme.spacing-xl;
+        y: UISize.control-center-status-bar-height + Theme.control-size-md;
+        border-radius: Theme.radius-lg;
+        background: Theme.palette-surface;
         clip: true;
         VerticalLayout { @children }
     }
@@ -162,25 +176,31 @@ export component OverlayMenu inherits Rectangle {
 
 export component ShieldPage inherits BasePage {
     VerticalLayout {
-        padding-left: Size.sz6; padding-right: Size.sz6;
-        padding-top: Size.sz6; padding-bottom: Size.sz6;
+        padding-left: Theme.spacing-xl; padding-right: Theme.spacing-xl;
+        padding-top: Theme.spacing-xl; padding-bottom: Theme.spacing-xl;
         @children
     }
 }
 export component JumboIcon inherits Rectangle {
     in property <string> name: "jumbo-circle";
     width: IconSize.px184; height: IconSize.px184;
-    border-radius: self.width / 2; background: #1B2638FF;
+    border-radius: self.width / 2; background: Theme.palette-card;
     VerticalLayout { alignment: center; HorizontalLayout { alignment: center; @children } }
 }
 
 export component TimerLoader inherits Rectangle {
     in property <bool> running: true;
-    in property <length> size: 24px;
-    in property <brush> loader-color: Palette.content-tertiary;
-    in property <brush> active-color: Palette.content-primary;
-    width: size; height: size; border-radius: size / 2;
-    border-width: 4px; border-color: running ? active-color : loader-color;
+    in property <length> size: Theme.icon-size-md;
+    in property <color> loader-color: Theme.palette-muted;
+    in property <color> active-color: Theme.palette-foreground;
+    width: size; height: size;
+    if root.running: UiSpinner {
+        width: parent.width;
+        height: parent.height;
+        spinner-size: root.size;
+        track-color: root.loader-color;
+        accent-color-override: root.active-color;
+    }
 }
 
 export component Qrcode inherits Rectangle {
@@ -193,7 +213,8 @@ export component AnimatedQrCode inherits Rectangle {
     in property <duration> interval: 250ms;
     in property <bool> animate: true;
     private property <int> index: 0;
-    width: 350px; height: 350px;
+    width: UISize.screen-width - Theme.control-size-lg * 2;
+    height: self.width;
     Qrcode { width: parent.width; height: parent.height; data: root.parts.length > 0 ? root.parts[root.index] : ""; }
     Timer { interval: root.interval; running: root.animate && root.parts.length > 1; triggered() => { root.index = root.parts.length > 0 ? Math.mod(root.index + 1, root.parts.length) : 0; } }
 }
@@ -204,7 +225,8 @@ export component DynamicQrCode inherits Rectangle {
     property <[string]> parts: get-parts(density == QrDensity.low ? 250 : density == QrDensity.medium ? 500 : 1000);
     private property <int> index: 0;
     pure callback get-parts(int) -> [string];
-    width: 368px; height: 392px;
-    Qrcode { width: 368px; height: 368px; data: root.parts.length > 0 ? root.parts[root.index] : ""; }
+    width: UISize.screen-width - Theme.control-size-md * 2;
+    height: self.width + Theme.spacing-xl;
+    Qrcode { width: parent.width; height: parent.width; data: root.parts.length > 0 ? root.parts[root.index] : ""; }
     Timer { interval: 250ms; running: root.parts.length > 1; triggered() => { root.index = root.parts.length > 0 ? Math.mod(root.index + 1, root.parts.length) : 0; } }
 }

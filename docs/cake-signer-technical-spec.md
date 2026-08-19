@@ -2,7 +2,8 @@
 
 Date: 2026-07-27
 
-Status: hardware-tested proof of concept; standalone Foundation SDK 1.0.0 app
+Status: original proof of concept hardware-tested; standalone Foundation SDK
+1.0.0 port software-validated, with KeyOS 1.4 hardware re-validation pending
 
 Canonical Prime app repository:
 `https://github.com/Foundation-Devices/passport-cake-signer`

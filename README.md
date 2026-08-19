@@ -7,6 +7,11 @@ derivation, and wallet management.
 This repository builds as a standalone Foundation SDK application. It does not
 need a KeyOS source checkout and must not be copied into a KeyOS workspace.
 
+Software validation for the SDK 1.0.0 port is complete. The earlier proof of
+concept was exercised on hardware before this port; version 0.2.1 still needs
+the [KeyOS 1.4 hardware matrix](docs/keyos-1.4-hardware-validation.md) run on a
+Passport Prime before the port itself is described as hardware-validated.
+
 ## Requirements
 
 - Passport Prime running KeyOS 1.4 beta or newer
@@ -80,13 +85,15 @@ Available in a developer-signed build:
 - watch-only pairing QR display
 - transaction parsing, review, and signing
 - signed transaction and key-image QR display
+- Launcher universal-QR handoff for `xmr-txunsigned` transactions
 - manual address derivation/verification by account and subaddress index
 - fixed-name Airlock file exchange and persistent app data
 
 Unavailable until KeyOS exposes a third-party-safe API:
 
 - Cake-over-QuantumLink requests and responses
-- launching the system QR scanner from this app
+- launching the system QR scanner from inside this app (Launcher can still
+  scan and hand a matching `xmr-txunsigned` UR to Cake Signer)
 - launching the system file picker from this app
 
 For file exchange, disconnect USB before the app accesses Airlock:

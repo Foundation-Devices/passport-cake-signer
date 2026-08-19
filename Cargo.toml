@@ -3,7 +3,7 @@
 
 [package]
 name = "gui-app-cake-signer"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Foundation Devices, Inc. <hello@foundation.xyz>"]
 license = "GPL-3.0-or-later"
@@ -50,10 +50,10 @@ sha3 = { version = "0.10", default-features = false }
 # wallet's keys are derived from a Polyseed seeded by the KeyOS app seed, so this
 # is ALL-TARGET (device + sim must derive the same wallet). no_std (alloc) via
 # default-features = false. Proven in ../../../monero-cold-core (polyseed.rs).
-polyseed = { git = "https://github.com/kayabaNerve/monero-wallet-util", default-features = false }
+polyseed = { git = "https://github.com/kayabaNerve/monero-wallet-util", rev = "797fe701a6f9e99ae614c49479bb981de1afe8ec", default-features = false }
 # Legacy 24/25-word Monero mnemonic parser from the same audited utility repo
 # as Polyseed. Used only for importing an existing Monero seed into this app.
-monero-seed = { git = "https://github.com/kayabaNerve/monero-wallet-util", default-features = false }
+monero-seed = { git = "https://github.com/kayabaNerve/monero-wallet-util", rev = "797fe701a6f9e99ae614c49479bb981de1afe8ec", default-features = false }
 # Zeroizing secret material (Polyseed entropy/key); all-target since key
 # derivation runs on device + sim.
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
@@ -67,7 +67,7 @@ chacha20 = { version = "0.9", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 # RingCT/CLSAG + Bulletproof+ signing (serai / monero-oxide). no_std (alloc);
 # the signer seeds a deterministic ChaCha20Rng, so no getrandom on xous.
-monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide.git", default-features = false }
+monero-wallet = { git = "https://github.com/monero-oxide/monero-oxide.git", rev = "731657ae3385be667abb556266369a497bc86f13", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 
