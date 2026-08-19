@@ -1,0 +1,75 @@
+// Compatibility tokens for the Cake UI while using the Foundation SDK UI2 runtime.
+import { Theme, Images } from "@ui/theme.slint";
+export { Theme, Images }
+
+export enum Importance { primary, secondary, tertiary, notice, normal, white, negative }
+export enum Palettes { light, dark }
+
+export global CurrentTheme {
+    in-out property <Palettes> palette: Palettes.dark;
+    out property <bool> is-dark: palette == Palettes.dark;
+    out property <bool> is-light: palette == Palettes.light;
+}
+
+export global Size {
+    out property <length> zero: 0px;
+    out property <length> sz1: 4px;
+    out property <length> sz2: 8px;
+    out property <length> sz3: 12px;
+    out property <length> sz4: 16px;
+    out property <length> sz5: 20px;
+    out property <length> sz6: 24px;
+    out property <length> sz7: 28px;
+    out property <length> sz8: 32px;
+    out property <length> sz9: 36px;
+    out property <length> sz10: 40px;
+    out property <length> sz11: 44px;
+    out property <length> sz12: 48px;
+    out property <length> sz13: 52px;
+    out property <length> sz14: 56px;
+    out property <length> sz15: 60px;
+    out property <length> sz16: 64px;
+}
+
+export global IconSize {
+    out property <length> px16: 16px;
+    out property <length> px24: 24px;
+    out property <length> px32: 32px;
+    out property <length> px48: 48px;
+    out property <length> px64: 64px;
+    out property <length> px96: 96px;
+    out property <length> px184: 184px;
+}
+
+export global UISize {
+    out property <length> screen-width: 480px;
+    out property <length> screen-height: 800px;
+    out property <length> control-center-status-bar-height: 40px;
+    out property <length> app-window-height: 760px;
+    out property <length> modal-width: 432px;
+}
+
+export global Palette {
+    out property <brush> content-primary: #F7F9FFFF;
+    out property <brush> content-secondary: #B9C4D7FF;
+    out property <brush> content-tertiary: #8C9FBBFF;
+    out property <brush> content-disabled: #62718AFF;
+    out property <brush> content-brand: #5B8CFFFF;
+    out property <brush> content-negative: #FF6B7AFF;
+    out property <brush> content-positive: #4DDA9AFF;
+    out property <brush> background-primary: #101725FF;
+    out property <brush> background-primary-alternative: #1B2638FF;
+    out property <brush> background-disabled: #202B3DFF;
+    out property <brush> background-brand: #3977FFFF;
+    out property <brush> background-negative: #6A2630FF;
+    out property <brush> border-tertiary: #334258FF;
+    out property <brush> border-focus: #5B8CFFFF;
+    out property <brush> overlay: #060A10E6;
+    out property <brush> black: #000000FF;
+    out property <brush> white: #FFFFFFFF;
+    out property <brush> transparent: #00000000;
+}
+
+export global Utils {
+    pure callback qrcode(string, color, color) -> image;
+}

@@ -14,7 +14,7 @@ security::use_api!();
 /// Fetch the 32-byte app seed. Hardware must never fall back to a known key.
 #[cfg(keyos)]
 pub fn app_seed() -> Result<[u8; 32], security::AccessDenied> {
-    Security::default().app_seed()
+    Security::default().app_seed().map(|seed| *seed.as_bytes())
 }
 
 /// Simulator: pin the deterministic dev wallet (seed 0x11*32). This makes the

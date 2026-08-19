@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { ButtonSection, AppHeader, ScrollBody, HeadingXl, TextLg, TextMd, TextSm, BasePage } from "@ui/widgets.slint";
+import { ButtonSection, AppHeader, ScrollBody, HeadingXl, TextLg, TextMd, TextSm, BasePage } from "../../compat/widgets.slint";
 import { CakeButton, CakeCard, CakeIcon, CakeSlideToSign, CakeStatusBanner } from "../../cake-widgets.slint";
-import { Size, Importance, IconSize } from "@ui/theme.slint";
+import { Size, Importance, IconSize } from "../../compat/theme.slint";
 import { Callbacks } from "../../callbacks.slint";
 import { ReviewPageProps } from "./props.slint";
 import { Navigate } from "../../gen/navigate.slint";
@@ -151,7 +151,7 @@ component SigningProgress inherits BasePage {
         }
 
         TextMd {
-            text: "Creating the Monero signature and returning it to Cake Wallet over QuantumLink.";
+            text: "Creating the Monero signature and preparing it for Cake Wallet.";
             color: Cake.on-surface-dim;
             horizontal-alignment: center;
             wrap: word-wrap;
@@ -203,7 +203,7 @@ component SigningSuccess inherits BasePage {
             }
 
             TextMd {
-                text: "The signed transaction was returned to Cake Wallet over QuantumLink.";
+                text: "The signed transaction is ready to return to Cake Wallet.";
                 color: Cake.on-surface-dim;
                 horizontal-alignment: center;
                 wrap: word-wrap;

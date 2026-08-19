@@ -2,7 +2,7 @@
 
 Date: 2026-07-27
 
-Status: hardware-tested proof of concept with implemented QuantumLink transport
+Status: hardware-tested proof of concept; standalone Foundation SDK 1.0.0 app
 
 Canonical Prime app repository:
 `https://github.com/Foundation-Devices/passport-cake-signer`
@@ -13,7 +13,12 @@ Companion Cake Android fork:
 Cake upstream target:
 `https://github.com/cake-tech/cake_wallet`
 
-KeyOS integration worktree: `KeyOS-cake-signer`
+Build target: Foundation SDK 1.0.0 / KeyOS 1.4 beta (no KeyOS source checkout)
+
+> Historical note: sections describing QuantumLink document the Foundation-
+> internal proof of concept. The public, independently signed 1.4 package uses
+> QR and fixed-name Airlock exchange because arbitrary QuantumLink app data is
+> not currently exposed to third-party signing identities.
 
 ## 1. Executive Summary
 

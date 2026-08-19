@@ -15,16 +15,21 @@
 mod master_key;
 mod monero;
 mod qr;
+mod theme;
 
+#[cfg(foundation_internal_quantum_link)]
+use std::collections::HashSet;
 use std::{
     cell::OnceCell,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
+#[cfg(foundation_internal_quantum_link)]
 use gui_permissions::GuiPermissions;
 use monero::{keys::MoneroKeys, signer, txset, wallets, Network, TxSummary};
+#[cfg(foundation_internal_quantum_link)]
 use quantum_link::{
     foundation_api::wdk::{
         WdkMoneroKeyImageSyncResponse, WdkMoneroSignTransactionResponse,
@@ -43,25 +48,22 @@ use quantum_link::{
     PairingEvent,
 };
 use slint_keyos_platform::{
-    app, async_archive,
-    gui_server_api::navigation::{
-        filepicker::{AllowedLocations, Location as PickLocation, SelectFileOptions},
-        qrscanner::{ScanQrOptions, ScanQrResult},
-    },
-    navigation::{open_qr_scanner, select_file},
+    app_ui2,
     slint::{ComponentHandle, ModelRc, SharedString, VecModel},
-    spawn_local, spawn_worker, subscribe_archive,
+};
+#[cfg(foundation_internal_quantum_link)]
+use slint_keyos_platform::{
+    gui_server_api::navigation::qrscanner::{ScanQrOptions, ScanQrResult},
+    navigation::open_qr_scanner,
+    spawn_local, spawn_worker,
 };
 
-// `app!` injects the permission-parameterized `FileSystem` alias (via
+// `app_ui2!` injects the permission-parameterized `FileSystem` alias (via
 // fs::use_api!), the `AppWindow`/`Callbacks`/`TrId`/`AppContext` types, and the
 // `tr` helpers — so we deliberately do NOT `use fs::FileSystem` (that raw,
 // unparameterized type would shadow the alias and break the permission bounds).
-app!("Cake");
-bt::use_api!();
-quantum_link::use_api!();
-
-use quantum_link_permissions::QuantumLinkPermissions;
+app_ui2!("Cake");
+include!(concat!(env!("OUT_DIR"), "/tr.rs"));
 
 // Mainnet: the real Cake Wallet mobile app is mainnet-only, so the pairing
 // address must be a mainnet (`4…`) address. The signing code is network-agnostic
@@ -74,7 +76,6 @@ const MAX_TXSET_BYTES: u64 = 4_194_304; // 4 MiB; Monero tx sets are larger than
 const MAX_TXSET_QR_BYTES: usize = MAX_TXSET_BYTES as usize;
 const MAX_SEED_FILE_BYTES: u64 = 16_384;
 const MAX_SEED_TEXT_CHARS: usize = 4_096;
-const MAX_ADDRESS_QR_BYTES: usize = 512;
 const MAX_CACHED_OUTPUTS_PER_WALLET: usize = 8_192;
 const FEE_PER_WEIGHT: u64 = 20_000; // ≈ wallet2's fee; clears the network minimum
                                     // Restore height embedded in the view-only pairing QR (mainnet). Conservatively
@@ -87,6 +88,7 @@ const PAIR_RESTORE_HEIGHT: u64 = 3_400_000;
 // File-exchange names for the Cake mobile watch-only wallet.
 const VIEW_ONLY_FILE: &str = "cake-view-only.txt"; // address + private view key (one-time pairing)
 const KEY_IMAGES_FILE: &str = "cake-key-images"; // exported key images
+const UNSIGNED_TX_FILE: &str = "unsigned_monero_tx";
 const SIGNED_TX_FILE: &str = "signed_monero_tx"; // wallet2 signed_tx_set; Cake imports to broadcast
 const WALLET_BOOK_FILE: &str = "wallets.json";
 const IMPORTED_RESTORE_HEIGHT: u64 = 0; // Imported seeds may be old; full scan is safest.
@@ -125,21 +127,27 @@ struct AppState {
     /// QL request ids explicitly cancelled by Cake while a worker may still be
     /// parsing/signing. Workers are not interruptible, so completion checks this
     /// set before publishing a response.
+    #[cfg(foundation_internal_quantum_link)]
     cancelled_ql_requests: HashSet<Vec<u8>>,
     /// Address verification being derived and answered automatically by Prime.
+    #[cfg(foundation_internal_quantum_link)]
     pending_ql_address: Option<PendingQlAddress>,
     /// Wallet explicitly armed by the user for watch-only enrollment in Cake.
     /// QuantumLink pairing is device-scoped; this keeps a later credentials
     /// request tied to the wallet whose "Add to Cake" flow is on screen.
+    #[cfg(foundation_internal_quantum_link)]
     pending_ql_wallet_id: Option<String>,
     /// The last key-image response, keyed by Cake's request id. If Bluetooth
     /// drops the response after Prime has computed it, Cake can retry the same
     /// logical request and Prime can replay it without another expensive pass.
+    #[cfg(foundation_internal_quantum_link)]
     last_ql_key_image_response: Option<CachedQlKeyImageResponse>,
     /// Monotonic correlation id for Prime-initiated wallet-removal requests.
+    #[cfg(foundation_internal_quantum_link)]
     ql_wallet_removal_request_id: u64,
     /// A wallet remains linked locally until Cake acknowledges deleting the
     /// matching watch-only wallet from the phone.
+    #[cfg(foundation_internal_quantum_link)]
     pending_ql_wallet_removal: Option<PendingQlWalletRemoval>,
 }
 
@@ -149,6 +157,7 @@ struct PendingTx {
     ql_request_id: Option<Vec<u8>>,
 }
 
+#[cfg(foundation_internal_quantum_link)]
 #[derive(Clone)]
 struct PendingQlAddress {
     request_id: Vec<u8>,
@@ -165,12 +174,14 @@ struct WalletArtifact {
     bytes: Vec<u8>,
 }
 
+#[cfg(foundation_internal_quantum_link)]
 #[derive(Clone)]
 struct CachedQlKeyImageResponse {
     request_id: Vec<u8>,
     key_images_ur: String,
 }
 
+#[cfg(foundation_internal_quantum_link)]
 #[derive(Clone)]
 struct PendingQlWalletRemoval {
     request_id: Vec<u8>,
@@ -193,7 +204,10 @@ impl AppState {
         self.pending = None;
         self.last_signed = None;
         self.last_keyimages = None;
-        self.last_ql_key_image_response = None;
+        #[cfg(foundation_internal_quantum_link)]
+        {
+            self.last_ql_key_image_response = None;
+        }
         self.signing = false;
     }
 
@@ -208,6 +222,11 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     log_server::init_wait(env!("CARGO_CRATE_NAME")).unwrap();
     log::set_max_level(log::LevelFilter::Info);
     log::info!("Starting Cake Wallet Signer");
+
+    theme::init(&ui);
+    init_tr!(ui);
+    ui.global::<Utils>()
+        .on_qrcode(slint_keyos_platform::qrcode::render);
 
     UI.with(|slot| {
         slot.set(ui.clone_strong()).ok();
@@ -250,11 +269,17 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         tx_request_id: 0,
         address_cache: HashMap::new(),
         verify_request_id: 0,
+        #[cfg(foundation_internal_quantum_link)]
         cancelled_ql_requests: HashSet::new(),
+        #[cfg(foundation_internal_quantum_link)]
         pending_ql_address: None,
+        #[cfg(foundation_internal_quantum_link)]
         pending_ql_wallet_id: None,
+        #[cfg(foundation_internal_quantum_link)]
         last_ql_key_image_response: None,
+        #[cfg(foundation_internal_quantum_link)]
         ql_wallet_removal_request_id: 0,
+        #[cfg(foundation_internal_quantum_link)]
         pending_ql_wallet_removal: None,
     }));
 
@@ -346,7 +371,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let weak = ui.as_weak();
         ui.global::<Callbacks>().on_import_unsigned_tx(move || {
             let Some(ui) = weak.upgrade() else { return };
-            let bytes = match read_via_picker(MAX_TXSET_BYTES) {
+            let bytes = match read_exchange_file(UNSIGNED_TX_FILE, MAX_TXSET_BYTES) {
                 Ok(b) => b,
                 Err(e) => {
                     let msg = format!("{e}");
@@ -534,7 +559,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
             let Some(ui) = weak.upgrade() else {
                 return false;
             };
-            let bytes = match read_via_picker(MAX_SEED_FILE_BYTES) {
+            let bytes = match read_exchange_file("cake-seed.txt", MAX_SEED_FILE_BYTES) {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     let msg = format!("{e}");
@@ -595,6 +620,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 }
                 refresh_wallet_ui(&ui, &state);
                 set_status(&ui, "");
+                #[cfg(foundation_internal_quantum_link)]
                 if let Some(metadata) = active_linked_wallet_metadata(&state) {
                     spawn_local(async move {
                         if let Err(e) = publish_wallet_metadata(metadata).await {
@@ -796,6 +822,16 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 st.last_keyimages = None;
                 st.signing = false;
             }
+            #[cfg(not(foundation_internal_quantum_link))]
+            {
+                set_status(
+                    &ui,
+                    "QR scanning is not available to independently signed apps on KeyOS 1.4. Put cake/unsigned_monero_tx in Airlock, disconnect USB, then tap Import from file.",
+                );
+                return;
+            }
+            #[cfg(foundation_internal_quantum_link)]
+            {
             let opts = ScanQrOptions {
                 header_title: "Sign transaction".into(),
                 message: "Show the animated code from Cake Wallet (Send → QR).".into(),
@@ -913,6 +949,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 drop(st);
                 set_status(&ui, &format!("Unexpected QR type: {ur_type}"));
             }
+            }
         });
     }
 
@@ -936,13 +973,7 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 };
                 reset_transaction_ui(&ui);
                 set_status(&ui, "");
-                if let Some(request_id) = request_id {
-                    spawn_local(reject_wdk_request(
-                        request_id,
-                        "Transaction signing was rejected on Passport Prime.".into(),
-                    ))
-                    .detach();
-                }
+                let _ = request_id;
             });
     }
 
@@ -1036,75 +1067,35 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                         .active_wallet()
                         .map(|wallet| wallet.id == wallet_id)
                         .unwrap_or(false)
-                        && st.pending.as_ref().map(|pending| pending.wallet_id == wallet_id).unwrap_or(false);
+                        && st
+                            .pending
+                            .as_ref()
+                            .map(|pending| pending.wallet_id == wallet_id)
+                            .unwrap_or(false);
                     if !still_current {
                         drop(st);
                         ui.global::<Callbacks>().set_signing(false);
                         ui.global::<Callbacks>().set_signed_ok(false);
-                        set_status(ui, "Wallet changed while signing. Scan the transaction again.");
+                        set_status(
+                            ui,
+                            "Wallet changed while signing. Scan the transaction again.",
+                        );
                         return;
                     }
                     match result {
                         Ok(bytes) => {
-                            st.last_signed =
-                                Some(WalletArtifact { wallet_id: wallet_id.clone(), bytes: bytes.clone() });
-                            if let Some(request_id) = ql_request_id {
-                                drop(st);
-                                let state = state.clone();
-                                spawn_local(async move {
-                                    if take_ql_request_cancelled(&state, &request_id) {
-                                        state.lock().unwrap().pending = None;
-                                        queue_with_ui(|ui| {
-                                            ui.global::<Callbacks>().set_signing(false);
-                                            reset_transaction_ui(ui);
-                                            set_status(ui, "");
-                                            ui.global::<Navigate>().invoke_wallet_detail_page(
-                                                NavigateOptions {
-                                                    replace: true,
-                                                    animate: Animate::None,
-                                                },
-                                            );
-                                        });
-                                        return;
-                                    }
-                                    let response = PublishMoneroSignedTransaction {
-                                        response: WdkMoneroSignTransactionResponse {
-                                            protocol_version: WDK_PROTOCOL_VERSION,
-                                            request_id,
-                                            signed_tx_ur: qr::ur_string(qr::UR_TX_SIGNED, &bytes, 500),
-                                        },
-                                    };
-                                    match async_archive::<QuantumLinkPermissions, _>(response).await {
-                                        Ok(()) => {
-                                            state.lock().unwrap().pending = None;
-                                            queue_with_ui(|ui| {
-                                                ui.global::<Callbacks>().set_status_text("".into());
-                                                ui.global::<Callbacks>().set_signed_ok(true);
-                                                ui.global::<Callbacks>().set_signing(false);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            log::warn!(
-                                                "failed to publish Monero signed transaction over QL: {e:?}"
-                                            );
-                                            queue_with_ui(|ui| {
-                                                ui.global::<Callbacks>().set_signing(false);
-                                                set_status(
-                                                    ui,
-                                                    "Transaction signed, but could not be sent to Cake. Swipe again to retry.",
-                                                );
-                                            });
-                                        }
-                                    }
-                                })
-                                .detach();
-                            } else {
-                                // QR/file fallback remains explicit for offline exchange.
-                                drop(st);
-                                ui.global::<Callbacks>().set_signing(false);
-                                ui.global::<Callbacks>().set_signed_ok(true);
-                                ui.global::<Callbacks>().set_status_text("".into());
-                            }
+                            st.last_signed = Some(WalletArtifact {
+                                wallet_id: wallet_id.clone(),
+                                bytes: bytes.clone(),
+                            });
+                            // KeyOS 1.4 reserves arbitrary QuantumLink data messages
+                            // for Foundation-signed apps. Keep the signed artifact local
+                            // for the QR/file handoff instead of invoking a denied call.
+                            let _ = ql_request_id;
+                            drop(st);
+                            ui.global::<Callbacks>().set_signing(false);
+                            ui.global::<Callbacks>().set_signed_ok(true);
+                            ui.global::<Callbacks>().set_status_text("".into());
                         }
                         Err(signer::SignError::Decrypt) => {
                             drop(st);
@@ -1181,11 +1172,28 @@ fn queue_with_ui(f: impl FnOnce(&AppWindow) + Send + 'static) {
     .detach();
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn queue_status(msg: impl Into<String>) {
     let msg = msg.into();
     queue_with_ui(move |ui| set_status(ui, &msg));
 }
 
+#[cfg(not(foundation_internal_quantum_link))]
+fn init_quantum_link_pairing_ui(ui: &AppWindow, _state: &Arc<Mutex<AppState>>) {
+    let cb = ui.global::<Callbacks>();
+    cb.set_ql_bt_connected(false);
+    cb.set_ql_paired(false);
+    cb.set_ql_live(false);
+    cb.set_ql_cake_ready(false);
+    cb.set_ql_pairing_resetting(false);
+    cb.set_ql_status_text(
+        "QuantumLink app data is reserved for Foundation-signed apps on KeyOS 1.4. Use the QR/file workflow in this sideloaded build."
+            .into(),
+    );
+}
+
+#[cfg(foundation_internal_quantum_link)]
+#[cfg(foundation_internal_quantum_link)]
 fn init_quantum_link_pairing_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
     let cb = ui.global::<Callbacks>();
     cb.set_ql_status_text("Preparing Bluetooth pairing code.".into());
@@ -1440,10 +1448,12 @@ fn init_quantum_link_pairing_ui(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
     }
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn ql_peer_is_cake(device_name: &str) -> bool {
     device_name.eq_ignore_ascii_case("Cake Wallet")
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn refresh_ql_cake_ready(ui: &AppWindow) {
     let cb = ui.global::<Callbacks>();
     let cake_paired =
@@ -1452,6 +1462,7 @@ fn refresh_ql_cake_ready(ui: &AppWindow) {
     cb.set_ql_cake_ready(cake_paired && cb.get_ql_live());
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn ql_status_text(
     bt_connected: bool,
     ql_paired: bool,
@@ -1471,6 +1482,7 @@ fn ql_status_text(
     }
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
     {
         let state = state.clone();
@@ -1822,6 +1834,10 @@ fn init_quantum_link(state: &Arc<Mutex<AppState>>) {
     }
 }
 
+#[cfg(not(foundation_internal_quantum_link))]
+fn init_quantum_link(_state: &Arc<Mutex<AppState>>) {}
+
+#[cfg(foundation_internal_quantum_link)]
 fn begin_ql_request(state: &Arc<Mutex<AppState>>, request_id: &[u8]) {
     state
         .lock()
@@ -1830,6 +1846,7 @@ fn begin_ql_request(state: &Arc<Mutex<AppState>>, request_id: &[u8]) {
         .remove(request_id);
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn mark_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: Vec<u8>) {
     let mut st = state.lock().unwrap();
     if st.cancelled_ql_requests.len() >= 64 {
@@ -1873,6 +1890,7 @@ fn mark_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: Vec<u8>) 
     }
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn take_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: &[u8]) -> bool {
     state
         .lock()
@@ -1881,6 +1899,7 @@ fn take_ql_request_cancelled(state: &Arc<Mutex<AppState>>, request_id: &[u8]) ->
         .remove(request_id)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn build_ql_watch_credentials(
     state: &Arc<Mutex<AppState>>,
     request_id: Vec<u8>,
@@ -1915,6 +1934,7 @@ fn build_ql_watch_credentials(
     ))
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn wallet_metadata(
     st: &AppState,
     wallet: &wallets::WalletRecord,
@@ -1927,6 +1947,7 @@ fn wallet_metadata(
     })
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn active_linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Option<WdkMoneroWalletMetadata> {
     let st = state.lock().unwrap();
     let wallet = st.active_wallet().ok()?;
@@ -1938,6 +1959,7 @@ fn active_linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Option<WdkMone
         .flatten()
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Vec<WdkMoneroWalletMetadata> {
     let st = state.lock().unwrap();
     st.wallet_book
@@ -1957,12 +1979,14 @@ fn linked_wallet_metadata(state: &Arc<Mutex<AppState>>) -> Vec<WdkMoneroWalletMe
         .collect()
 }
 
+#[cfg(foundation_internal_quantum_link)]
 async fn publish_wallet_metadata(metadata: WdkMoneroWalletMetadata) -> Result<(), String> {
     async_archive::<QuantumLinkPermissions, _>(PublishMoneroWalletMetadata { metadata })
         .await
         .map_err(|e| format!("{e:?}"))
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn mark_wallet_cake_linked(state: &Arc<Mutex<AppState>>, wallet_id: &str) -> Result<(), String> {
     let save = {
         let mut st = state.lock().unwrap();
@@ -1983,6 +2007,7 @@ fn mark_wallet_cake_linked(state: &Arc<Mutex<AppState>>, wallet_id: &str) -> Res
     Ok(())
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn begin_wallet_removal_from_cake(
     state: &Arc<Mutex<AppState>>,
 ) -> Result<RequestMoneroWalletRemoval, String> {
@@ -2020,6 +2045,7 @@ fn begin_wallet_removal_from_cake(
     })
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn clear_pending_wallet_removal(state: &Arc<Mutex<AppState>>, request_id: &[u8]) {
     let mut st = state.lock().unwrap();
     if st
@@ -2031,12 +2057,14 @@ fn clear_pending_wallet_removal(state: &Arc<Mutex<AppState>>, request_id: &[u8])
     }
 }
 
+#[cfg(foundation_internal_quantum_link)]
 enum WalletRemovalOutcome {
     Removed,
     Kept,
     Stale,
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn apply_wallet_removal_response(
     state: &Arc<Mutex<AppState>>,
     response: WdkMoneroWalletRemovalResponse,
@@ -2073,6 +2101,7 @@ fn apply_wallet_removal_response(
     Ok(WalletRemovalOutcome::Removed)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn clear_wallet_cake_links(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
     let save = {
         let mut st = state.lock().unwrap();
@@ -2087,6 +2116,7 @@ fn clear_wallet_cake_links(state: &Arc<Mutex<AppState>>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn build_ql_key_image_ur(
     state: &Arc<Mutex<AppState>>,
     request_id: Vec<u8>,
@@ -2161,6 +2191,7 @@ fn build_ql_key_image_ur(
     })
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn stage_ql_signing_request(
     state: &Arc<Mutex<AppState>>,
     request_id: Vec<u8>,
@@ -2235,6 +2266,7 @@ fn stage_ql_signing_request(
     Ok(summary)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 fn stage_ql_address_request(
     state: &Arc<Mutex<AppState>>,
     request: WdkMoneroVerifyAddressRequest,
@@ -2302,6 +2334,7 @@ fn stage_ql_address_request(
     Ok(pending)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 async fn reject_wdk_request(request_id: Vec<u8>, message: String) {
     let rejection = RejectWdkRequest {
         response: WdkRequestRejected {
@@ -2816,6 +2849,7 @@ fn select_wallet(
                 false
             };
         }
+        #[cfg(foundation_internal_quantum_link)]
         if st.pending_ql_wallet_id.as_deref() != Some(id) {
             st.pending_ql_wallet_id = None;
         }
@@ -2874,52 +2908,12 @@ fn select_first_active_wallet(ui: &AppWindow, state: &Arc<Mutex<AppState>>) -> b
     true
 }
 
-fn import_seed_qr(ui: &AppWindow, state: &Arc<Mutex<AppState>>) -> bool {
-    let opts = ScanQrOptions {
-        header_title: "Import Cake seed".into(),
-        message: "Scan the seed QR exported by Cake Wallet.".into(),
-        ..ScanQrOptions::default()
-    };
-    let scan = match open_qr_scanner::<GuiPermissions>(opts) {
-        Ok(Some(scan)) => scan,
-        Ok(None) => return false,
-        Err(e) => {
-            set_status(ui, &format!("Scanner error: {e:?}"));
-            return false;
-        }
-    };
-    let raw = match scan {
-        ScanQrResult::Qr { data, .. } => {
-            if data.len() > MAX_SEED_TEXT_CHARS {
-                set_status(ui, "Seed QR is too large.");
-                return false;
-            }
-            match String::from_utf8(data) {
-                Ok(s) => s,
-                Err(_) => {
-                    set_status(ui, "Seed QR must be UTF-8 text.");
-                    return false;
-                }
-            }
-        }
-        _ => {
-            set_status(ui, "Scan Cake's seed QR, not an animated transaction QR.");
-            return false;
-        }
-    };
-    let parsed = match parse_cake_seed_qr(&raw) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            set_status(ui, &e);
-            return false;
-        }
-    };
-    import_seed_text(
+fn import_seed_qr(ui: &AppWindow, _state: &Arc<Mutex<AppState>>) -> bool {
+    set_status(
         ui,
-        state,
-        &parsed.phrase,
-        parsed.restore_height.unwrap_or(IMPORTED_RESTORE_HEIGHT),
-    )
+        "QR scanning is not available to independently signed apps on KeyOS 1.4. Type the seed, or put it in cake/cake-seed.txt in Airlock and use Import text file.",
+    );
+    false
 }
 
 struct ParsedSeedQr {
@@ -3050,87 +3044,12 @@ fn seed_import_preview(phrase: &str) -> String {
     }
 }
 
-fn verify_address_scan(ui: &AppWindow, state: &Arc<Mutex<AppState>>) {
+fn verify_address_scan(ui: &AppWindow, _state: &Arc<Mutex<AppState>>) {
     clear_verify_ui(ui);
-    set_status(ui, "");
-    let opts = ScanQrOptions {
-        header_title: "Verify Monero address".into(),
-        message: "Scan an address from Cake Wallet.".into(),
-        ..ScanQrOptions::default()
-    };
-    let scan = match open_qr_scanner::<GuiPermissions>(opts) {
-        Ok(Some(scan)) => scan,
-        Ok(None) => return,
-        Err(e) => {
-            set_status(ui, &format!("Scanner error: {e:?}"));
-            return;
-        }
-    };
-    let address = match scan {
-        ScanQrResult::Qr { data, .. } => {
-            if data.len() > MAX_ADDRESS_QR_BYTES {
-                set_verify_result(
-                    ui,
-                    false,
-                    "QR too large",
-                    "Scan a normal Monero address QR from Cake Wallet.",
-                    "",
-                );
-                return;
-            }
-            match String::from_utf8(data) {
-                Ok(s) => match normalize_scanned_monero_address(&s) {
-                    Ok(address) => address,
-                    Err(AddressScanError::Bitcoin) => {
-                        set_verify_result(
-                            ui,
-                            false,
-                            "Bitcoin address",
-                            "This QR contains a Bitcoin address. This screen only verifies Monero addresses from Cake Wallet.",
-                            "",
-                        );
-                        return;
-                    }
-                    Err(AddressScanError::NotMonero) => {
-                        set_verify_result(
-                            ui,
-                            false,
-                            "Not a Monero address",
-                            "Scan a Monero receive address from Cake Wallet, or use the account/subaddress fields below.",
-                            "",
-                        );
-                        return;
-                    }
-                },
-                Err(_) => {
-                    set_verify_result(
-                        ui,
-                        false,
-                        "Invalid QR",
-                        "Address QR was not UTF-8 text.",
-                        "",
-                    );
-                    return;
-                }
-            }
-        }
-        ScanQrResult::LeftClicked | ScanQrResult::RightClicked => return,
-        _ => {
-            set_verify_result(
-                ui,
-                false,
-                "Not an address QR",
-                "Scan a Cake Wallet address QR, not an animated transaction QR.",
-                "",
-            );
-            return;
-        }
-    };
-    if address.is_empty() {
-        set_verify_result(ui, false, "Invalid QR", "Address QR was empty.", "");
-        return;
-    }
-    verify_scanned_address_async(ui, state, address);
+    set_status(
+        ui,
+        "QR scanning is not available to independently signed apps on KeyOS 1.4. Verify by account and subaddress index below.",
+    );
 }
 
 fn verify_address_index(
@@ -3515,7 +3434,7 @@ fn save_wallet_book_impl(_dir: &Path, book: &wallets::WalletBook) -> anyhow::Res
     use std::io::{Seek, SeekFrom, Write};
 
     let json = wallets::to_json(book).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let mut fs = FileSystem::default();
+    let fs = FileSystem::default();
     {
         let mut file = fs
             .open_file(
@@ -3534,17 +3453,7 @@ fn save_wallet_book_impl(_dir: &Path, book: &wallets::WalletBook) -> anyhow::Res
             .map_err(|e| anyhow::anyhow!("truncate {WALLET_BOOK_FILE}: {e:?}"))?;
         file.flush()?;
     }
-    fs.flush(fs::Location::AppData)
-        .map_err(|e| anyhow::anyhow!("flush app data: {e:?}"))?;
     Ok(())
-}
-
-fn map_location(loc: PickLocation) -> fs::Location {
-    match loc {
-        PickLocation::Internal => fs::Location::User,
-        PickLocation::Airlock => fs::Location::Airlock,
-        PickLocation::External => fs::Location::Usb,
-    }
 }
 
 fn loc_label(loc: fs::Location) -> &'static str {
@@ -3556,20 +3465,21 @@ fn loc_label(loc: fs::Location) -> &'static str {
     }
 }
 
-/// Open the file picker (file-selection mode), read the chosen file, return its
-/// raw bytes. Used to load an unsigned tx that Cake Wallet exported.
-fn read_via_picker(max: u64) -> anyhow::Result<Vec<u8>> {
-    let options = SelectFileOptions::default().with_allowed_locations(AllowedLocations::All);
-    let result = select_file::<GuiPermissions>(options)
-        .map_err(|e| anyhow::anyhow!("picker error: {e:?}"))?;
-    let Some(result) = result else {
-        anyhow::bail!("cancelled");
-    };
-    let Some((path, loc)) = result.files().first().cloned() else {
-        anyhow::bail!("no file selected");
-    };
+/// Read a fixed exchange filename without launching the Foundation-only file
+/// picker. Airlock is tried first, then removable/internal storage.
+fn read_exchange_file(filename: &str, max: u64) -> anyhow::Result<Vec<u8>> {
     let filesystem = FileSystem::default();
-    read_bytes_fs_limited(&filesystem, &path, map_location(loc), max)
+    let paths = [format!("{EXPORT_DIR}/{filename}"), filename.to_string()];
+    for location in [fs::Location::Airlock, fs::Location::Usb, fs::Location::User] {
+        for path in &paths {
+            if let Ok(bytes) = read_bytes_fs_limited(&filesystem, path, location, max) {
+                return Ok(bytes);
+            }
+        }
+    }
+    anyhow::bail!(
+        "Could not find {EXPORT_DIR}/{filename}. Put it in Airlock, disconnect USB, and try again."
+    )
 }
 
 /// Read a file's bytes through the KeyOS FileSystem, capped at `max`.
@@ -3613,28 +3523,10 @@ fn read_text_fs_limited(
     String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("{label} file is not UTF-8"))
 }
 
-/// Open the folder picker and write `filename` into the chosen folder/location
-/// (SD, USB, internal, or Airlock), committing in the order that survives card
-/// removal on FAT media (write -> File::flush -> close -> FileSystem::flush).
+/// Write exchange artifacts to the app's predictable Airlock directory. This
+/// avoids the Foundation-only file picker used by built-in applications.
 fn export_via_picker(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
-    let options = SelectFileOptions::default()
-        .with_dir_selection_mode(true)
-        .with_allowed_locations(AllowedLocations::All);
-    let result = select_file::<GuiPermissions>(options)
-        .map_err(|e| anyhow::anyhow!("picker error: {e:?}"))?;
-    let Some(result) = result else {
-        anyhow::bail!("cancelled");
-    };
-    let Some((dir, loc)) = result.files().first().cloned() else {
-        anyhow::bail!("no folder selected");
-    };
-    let dir = dir.trim_end_matches('/').to_string();
-    let dir = if dir.is_empty() {
-        EXPORT_DIR.to_string()
-    } else {
-        dir
-    };
-    write_export(filename, bytes, map_location(loc), &dir)
+    write_export(filename, bytes, fs::Location::Airlock, EXPORT_DIR)
 }
 
 /// Write `bytes` to a fresh file inside `dir` at `location`. The directory-entry
@@ -3647,7 +3539,7 @@ fn write_export(
     dir: &str,
 ) -> anyhow::Result<String> {
     use std::io::Write;
-    let mut filesystem = FileSystem::default();
+    let filesystem = FileSystem::default();
     let directory = filesystem.create_dir(dir, location).map_err(|e| {
         if matches!(e, fs::Error::NoMedia) {
             match location {
@@ -3692,9 +3584,6 @@ fn write_export(
             .map_err(|e| anyhow::anyhow!("flush {path}: {e:?}"))?;
     } // drop file -> CloseFile (re-commits the directory entry)
     drop(directory); // CloseDir
-    filesystem
-        .flush(location)
-        .map_err(|e| anyhow::anyhow!("flush fs: {e:?}"))?;
     Ok(format!("{}{}", loc_label(location), path))
 }
 
@@ -3705,7 +3594,7 @@ fn write_export(
 fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
     use std::io::Write;
     let location = fs::Location::User;
-    let mut filesystem = FileSystem::default();
+    let filesystem = FileSystem::default();
     let directory = filesystem
         .create_dir(EXPORT_DIR, location)
         .map_err(|e| anyhow::anyhow!("open {EXPORT_DIR}: {e:?}"))?;
@@ -3753,9 +3642,6 @@ fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
             .map_err(|e| anyhow::anyhow!("flush {path}: {e:?}"))?;
     }
     drop(directory);
-    filesystem
-        .flush(location)
-        .map_err(|e| anyhow::anyhow!("flush fs: {e:?}"))?;
     Ok(format!("{}{}", loc_label(location), path))
 }
 
@@ -3763,6 +3649,7 @@ fn seed_demo_unsigned(filename: &str, bytes: &[u8]) -> anyhow::Result<String> {
 mod tests {
     use super::*;
 
+    #[cfg(foundation_internal_quantum_link)]
     fn wallet_removal_state(data_dir: PathBuf) -> Arc<Mutex<AppState>> {
         let mut wallet_book = wallets::WalletBook::new(PAIR_RESTORE_HEIGHT);
         wallet_book.set_cake_linked("slot-0", true).unwrap();
@@ -3778,11 +3665,17 @@ mod tests {
             tx_request_id: 0,
             address_cache: HashMap::new(),
             verify_request_id: 0,
+            #[cfg(foundation_internal_quantum_link)]
             cancelled_ql_requests: HashSet::new(),
+            #[cfg(foundation_internal_quantum_link)]
             pending_ql_address: None,
+            #[cfg(foundation_internal_quantum_link)]
             pending_ql_wallet_id: None,
+            #[cfg(foundation_internal_quantum_link)]
             last_ql_key_image_response: None,
+            #[cfg(foundation_internal_quantum_link)]
             ql_wallet_removal_request_id: 0,
+            #[cfg(foundation_internal_quantum_link)]
             pending_ql_wallet_removal: None,
         }))
     }
@@ -3875,6 +3768,7 @@ mod tests {
         assert_eq!(artifact_bytes_for_wallet("slot-0", &None), None);
     }
 
+    #[cfg(foundation_internal_quantum_link)]
     #[test]
     fn wallet_removal_waits_for_matching_cake_acknowledgement() {
         let data_dir =

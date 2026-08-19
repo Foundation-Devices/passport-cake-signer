@@ -1,8 +1,8 @@
 # Cake Signer Engineering Backlog
 
 This document tracks the reliability work that sits around the core QR signing
-demo. The app source lives here; KeyOS validation runs after syncing into the
-`KeyOS-cake-signer` integration worktree.
+demo. The app is a standalone Foundation SDK project and does not require a
+KeyOS source checkout.
 
 ## State-Machine Invariants
 
@@ -22,16 +22,15 @@ demo. The app source lives here; KeyOS validation runs after syncing into the
 Automated checks:
 
 ```bash
-./scripts/check-in-keyos.sh /Users/admin/Documents/AI/KeyOS-cake-signer
+foundation doctor
+foundation build
+foundation pack
 ```
 
-That script syncs this source repo into KeyOS, then runs:
+For Rust-only changes, also run:
 
-- `cargo check -p gui-app-cake-signer`
-- `cargo test -p gui-app-cake-signer`
-- `cargo clippy -p gui-app-cake-signer --bin gui-app-cake-signer --no-deps -- -D warnings`
-- `cargo xtask check gui-app-cake-signer`
-- `cargo xtask build --hosted --dont-sign --app gui-app-cake-signer`
+- `cargo fmt --check`
+- `cargo test --package gui-app-cake-signer`
 
 Manual hardware checks still required:
 
@@ -47,17 +46,17 @@ Manual hardware checks still required:
 
 ## Known External Boundary
 
-Cake mobile is not part of this source repo.
-
 - Canonical Prime app source:
   <https://github.com/Foundation-Devices/passport-cake-signer>
-- Companion Cake Android fork:
-  <https://github.com/BitcoinQnA/cake_wallet/tree/codex/passport-prime-quantumlink>
+- Companion Cake Android fork: `mobile-wallet/`
 - Cake upstream target:
   <https://github.com/cake-tech/cake_wallet>
 
-QuantumLink work requires the Cake mobile fork plus the KeyOS QuantumLink server
-path. For upstreamability, Cake-side changes should remain limited to:
+The public KeyOS 1.4 SDK does not grant independently signed apps access to
+arbitrary QuantumLink data/control operations. The source-gated historical
+transport remains useful as a protocol prototype, but the standalone package
+must use the supported QR and Airlock paths. For upstreamability, Cake-side
+changes should remain limited to:
 
 - A Passport Prime hardware-wallet entry beside existing hardware integrations.
 - A QuantumLink transport adapter.

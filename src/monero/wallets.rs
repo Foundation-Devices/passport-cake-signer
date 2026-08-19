@@ -654,7 +654,7 @@ impl ImportedSeed {
     fn from_legacy(seed: LegacySeed, language: LegacyLanguage) -> Self {
         let phrase = seed.to_string();
         let spend = seed.entropy();
-        debug_assert!(Scalar::from_canonical_bytes(*spend).is_some().into());
+        debug_assert!(bool::from(Scalar::from_canonical_bytes(*spend).is_some()));
         let keys = MoneroKeys::from_spend_key_bytes(*spend);
         let id = imported_id(legacy_language_label(language), &phrase);
         Self {

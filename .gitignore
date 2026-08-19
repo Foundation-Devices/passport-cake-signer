@@ -1,4 +1,7 @@
 /target
+.foundation-sdk/
+ui/ui
+manifest.toml
 **/*.rs.bk
 .DS_Store
 __pycache__/

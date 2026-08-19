@@ -3,12 +3,14 @@
 
 import { Router } from "gen/router.slint";
 import { Callbacks } from "callbacks.slint";
-import { BaseWindow } from "@ui/widgets.slint";
-import { CurrentTheme, Images, Utils, Palettes } from "@ui/theme.slint";
-import { TR } from "@ui/i18n/i18n.slint";
+import { CurrentTheme, Images, Utils, Palettes, Theme, UISize } from "compat/theme.slint";
+import { TR } from "compat/i18n.slint";
 import { Cake } from "cake-theme.slint";
 
-export component AppWindow inherits BaseWindow {
+export component AppWindow inherits Window {
+    title: "Cake Wallet Signer";
+    preferred-width: UISize.screen-width;
+    preferred-height: UISize.screen-height;
     background: Cake.background;
 
     init => {
@@ -19,4 +21,4 @@ export component AppWindow inherits BaseWindow {
 }
 
 export * from "gen/exports.slint";
-export { Callbacks, CurrentTheme, Images, Utils, TR }
+export { Callbacks, CurrentTheme, Images, Utils, TR, Theme }

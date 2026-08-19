@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Foundation Devices, Inc. <hello@foundation.xyz>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { HeadingMd, TextLg, TextMd, TextSm, TimerLoader } from "@ui/widgets.slint";
-import { Importance, Size, IconSize } from "@ui/theme.slint";
+import { HeadingMd, TextLg, TextMd, TextSm, TimerLoader } from "compat/widgets.slint";
+import { Importance, Size, IconSize } from "compat/theme.slint";
 import { Cake } from "cake-theme.slint";
 
 export component CakeIcon inherits Rectangle {
@@ -17,7 +17,7 @@ export component CakeIcon inherits Rectangle {
     if name == "alert": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/alert.svg");
+        source: @image-url("../resources/images/alert.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -25,7 +25,7 @@ export component CakeIcon inherits Rectangle {
     if name == "archive": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/archive.svg");
+        source: @image-url("../resources/images/archive.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -33,7 +33,7 @@ export component CakeIcon inherits Rectangle {
     if name == "arrow-right": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/arrow-right.svg");
+        source: @image-url("../resources/images/arrow-right.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -41,7 +41,7 @@ export component CakeIcon inherits Rectangle {
     if name == "bluetooth": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/bluetooth.svg");
+        source: @image-url("../resources/images/bluetooth.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -49,7 +49,7 @@ export component CakeIcon inherits Rectangle {
     if name == "cake": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/cake.svg");
+        source: @image-url("../resources/images/cake-mark.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -57,7 +57,7 @@ export component CakeIcon inherits Rectangle {
     if name == "check": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/check.svg");
+        source: @image-url("../resources/images/check.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -65,7 +65,7 @@ export component CakeIcon inherits Rectangle {
     if name == "chevron-left": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/chevron-left.svg");
+        source: @image-url("../resources/images/chevron-left.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -73,7 +73,7 @@ export component CakeIcon inherits Rectangle {
     if name == "chevron-right": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/chevron-right.svg");
+        source: @image-url("../resources/images/chevron-right.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -81,7 +81,7 @@ export component CakeIcon inherits Rectangle {
     if name == "delete": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/delete.svg");
+        source: @image-url("../resources/images/delete.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -89,7 +89,7 @@ export component CakeIcon inherits Rectangle {
     if name == "device": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/device.svg");
+        source: @image-url("../resources/images/device.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -97,7 +97,7 @@ export component CakeIcon inherits Rectangle {
     if name == "edit": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/edit.svg");
+        source: @image-url("../resources/images/edit.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -105,7 +105,7 @@ export component CakeIcon inherits Rectangle {
     if name == "ellipsis": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/ellipsis.svg");
+        source: @image-url("../resources/images/ellipsis.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -113,7 +113,7 @@ export component CakeIcon inherits Rectangle {
     if name == "eye": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/eye.svg");
+        source: @image-url("../resources/images/eye.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -121,7 +121,7 @@ export component CakeIcon inherits Rectangle {
     if name == "file": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/file.svg");
+        source: @image-url("../resources/images/file.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -129,7 +129,7 @@ export component CakeIcon inherits Rectangle {
     if name == "import": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/import.svg");
+        source: @image-url("../resources/images/import.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -137,7 +137,7 @@ export component CakeIcon inherits Rectangle {
     if name == "info": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/info.svg");
+        source: @image-url("../resources/images/info.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -145,7 +145,7 @@ export component CakeIcon inherits Rectangle {
     if name == "plus": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/plus.svg");
+        source: @image-url("../resources/images/plus.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -153,7 +153,7 @@ export component CakeIcon inherits Rectangle {
     if name == "scan-qr": Image {
         width: parent.width;
         height: parent.height;
-        source: @image-url("../assets/icons/ui/scan-qr.svg");
+        source: @image-url("../resources/images/scan-qr.svg");
         colorize: root.icon-color;
         image-fit: contain;
     }
@@ -411,7 +411,7 @@ export component CakeListTile inherits Rectangle {
             alignment: center;
 
             if root.show-monero-network: Image {
-                source: @image-url("../assets/icons/monero-network.svg");
+                source: @image-url("../resources/images/monero-network.svg");
                 width: Size.sz10;
                 height: Size.sz10;
                 image-fit: contain;

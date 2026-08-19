@@ -22,10 +22,7 @@
 //! straight from the string by the Slint `QrCodeCard`. See [`pair_json`].
 
 use serde::Serialize;
-use slint_keyos_platform::{
-    qrcode,
-    slint::{Model, ModelRc, SharedString},
-};
+use slint_keyos_platform::slint::{ModelRc, SharedString, VecModel};
 
 /// UR type for the signed tx we hand back to Cake.
 pub const UR_TX_SIGNED: &str = "xmr-txsigned";
@@ -56,7 +53,15 @@ pub fn ur_parts(ur_type: &str, blob: &[u8], max_size: i32) -> ModelRc<SharedStri
     // DataTooLong), so it MUST be multi-part. Pure parts decode deterministically in
     // Cake's bc-ur — unlike fountain-mixed parts, which the two stacks reassemble
     // differently and which made scans drag on for minutes (or never converge).
-    qrcode::encode_qr_parts_static(ur_type, ur_bytes, max_size)
+    let fragment_len =
+        foundation_ur::max_fragment_len(ur_type, 100, usize::try_from(max_size).unwrap_or(500));
+    let part_count = ur_bytes.len().div_ceil(fragment_len.max(1));
+    let mut encoder = foundation_ur::Encoder::new();
+    encoder.start(ur_type, &ur_bytes, fragment_len);
+    let parts = (0..part_count)
+        .map(|_| SharedString::from(encoder.next_part().to_string().to_uppercase()))
+        .collect::<Vec<_>>();
+    ModelRc::new(VecModel::from(parts))
 }
 
 /// Unwrap the CBOR bytestring carried by an incoming UR back to the raw blob.
@@ -80,6 +85,7 @@ pub fn ur_payload_limited(data: &[u8], max_len: usize) -> Result<Vec<u8>, &'stat
     Ok(payload)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 pub fn ur_text_payload_limited(
     text: &str,
     expected_type: &str,
@@ -127,6 +133,7 @@ pub fn ur_text_payload_limited(
     ur_payload_limited(data, max_len)
 }
 
+#[cfg(foundation_internal_quantum_link)]
 pub fn ur_string(ur_type: &str, blob: &[u8], max_size: i32) -> String {
     ur_parts(ur_type, blob, max_size)
         .iter()
@@ -186,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_tx_sized_payload_is_multi_frame_lowercase_ur() {
+    fn signed_tx_sized_payload_is_multi_frame_uppercase_ur() {
         let payload = vec![0x42; 3_000];
         let parts = ur_parts(UR_TX_SIGNED, &payload, 500);
         let frames = parts
@@ -197,6 +204,6 @@ mod tests {
         assert!(frames.len() > 1, "expected animated QR, got one frame");
         assert!(frames
             .iter()
-            .all(|frame| frame.starts_with("ur:xmr-txsigned/")));
+            .all(|frame| frame.starts_with("UR:XMR-TXSIGNED/")));
     }
 }
