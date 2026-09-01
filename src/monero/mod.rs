@@ -20,9 +20,10 @@
 //!
 //! The crypto engine is the pure-Rust serai / monero-oxide stack
 //! (`monero-wallet` + `monero-clsag`), the Monero analogue of the
-//! bitcoin+miniscript `ngwallet` stack the Liana signer uses. Both compile
-//! no_std for `armv7a-unknown-xous-elf`, which is what makes a native KeyOS
-//! Monero signer feasible (the C++ wallet2 core does not).
+//! bitcoin+miniscript `ngwallet` stack the Liana signer uses. Both build for
+//! `armv7a-unknown-xous-elf` unmodified, which is what makes a native KeyOS
+//! Monero signer feasible (the C++ wallet2 core does not). KeyOS is a std
+//! target, so no crate here needs a no_std patch.
 
 #![allow(dead_code)]
 

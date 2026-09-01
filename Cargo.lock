@@ -1087,17 +1087,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "cryptonight-noxous"
+name = "cuprate-cryptonight"
 version = "0.1.0"
+source = "git+https://github.com/Cuprate/cuprate?rev=0b64b33dcd7f50168a5ba4d6d58a5a210b1cbc59#0b64b33dcd7f50168a5ba4d6d58a5a210b1cbc59"
 dependencies = [
  "digest",
  "groestl",
  "jh",
  "keccak",
- "libm",
  "seq-macro",
  "sha3",
  "skein",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1987,7 +1988,7 @@ dependencies = [
  "base64",
  "chacha20",
  "chacha20poly1305",
- "cryptonight-noxous",
+ "cuprate-cryptonight",
  "curve25519-dalek",
  "foundation-themes",
  "foundation-ur",

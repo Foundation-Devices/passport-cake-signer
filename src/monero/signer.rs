@@ -36,8 +36,8 @@ impl core::fmt::Display for SignError {
 }
 
 // ---------------------------------------------------------------------------
-// Signing — ALL-TARGET. serai (no_std) + vendored no_std CryptoNight run on the
-// device too; the signer seeds a deterministic ChaCha20Rng so no getrandom.
+// Signing — ALL-TARGET. serai and upstream cuprate-cryptonight run on the
+// device unmodified; the signer seeds a deterministic ChaCha20Rng so no getrandom.
 // ---------------------------------------------------------------------------
 mod imp {
     use monero_wallet::{

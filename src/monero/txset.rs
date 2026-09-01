@@ -10,9 +10,9 @@
 //!   chacha key = cryptonight_hash_v0(view_secret) (cn_slow_hash v0, kdf_rounds 1)
 //!   amounts are LEB128 varints; addresses are spend_pub(32)||view_pub(32).
 //!
-//! cn_slow_hash needs CryptoNight; we use the vendored no_std `cryptonight-noxous`
-//! (byte-for-byte parity with cuprate-cryptonight), so decryption runs on the
-//! device too, not just host/sim.
+//! cn_slow_hash needs CryptoNight, taken straight from upstream Cuprate
+//! (`cuprate-cryptonight`). KeyOS is a std target, so the crate builds for the
+//! device unmodified and there is nothing to vendor or keep in parity.
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -44,7 +44,7 @@ pub fn chacha_key(view_secret: &[u8; 32]) -> [u8; 32] {
             return *cache;
         }
     }
-    let k = cryptonight_noxous::cryptonight_hash_v0(view_secret);
+    let k = cuprate_cryptonight::cryptonight_hash_v0(view_secret);
     let mut guard = CHACHA_KEY_CACHE.lock().unwrap();
     guard
         .get_or_insert_with(HashMap::new)
@@ -666,4 +666,34 @@ pub fn encode_key_images(_images: &[([u8; 32], [u8; 64])], _view_key_hex: &str) 
     Err(Error::Unsupported(
         "key image export encode not implemented yet".into(),
     ))
+}
+
+#[cfg(test)]
+mod cryptonight_tests {
+    /// Official Monero `tests-slow.txt` vector for CryptoNight v0.
+    ///
+    /// This is the KDF behind every wallet2 txset chacha key, so a wrong answer
+    /// here means nothing from Cake decrypts. Pinning the vector keeps that
+    /// guarantee attached to *this* app rather than to whichever crate supplies
+    /// the hash — it survived the switch from the hand-patched no_std vendor
+    /// copy to upstream `cuprate-cryptonight`, and would catch a bad bump.
+    ///
+    /// Source: monero-project/monero `tests/hash/tests-slow.txt`.
+    #[test]
+    fn cryptonight_v0_matches_the_monero_vector() {
+        let cases = [
+            (
+                "6465206f6d6e69627573206475626974616e64756d",
+                "2f8e3df40bd11f9ac90c743ca8e32bb391da4fb98612aa3b6cdc639ee00b31f5",
+            ),
+            (
+                "6162756e64616e732063617574656c61206e6f6e206e6f636574",
+                "722fa8ccd594d40e4a41f3822734304c8d5eff7e1b528408e2229da38ba553c4",
+            ),
+        ];
+        for (input, expected) in cases {
+            let got = cuprate_cryptonight::cryptonight_hash_v0(&hex::decode(input).unwrap());
+            assert_eq!(hex::encode(got), expected, "input {input}");
+        }
+    }
 }

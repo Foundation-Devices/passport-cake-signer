@@ -74,10 +74,15 @@ uses it to derive the app seed, so changing it creates different Monero keys.
 
 ## Third-party app limitations on KeyOS 1.4
 
-KeyOS 1.4 ships Bluetooth, QuantumLink, QR-scanner navigation, and file-picker
-APIs, but their data/control operations are reserved for Foundation-signed
-applications. Calling those denied operations from an independently signed app
-can terminate the app. This SDK build therefore does not make those calls.
+KeyOS 1.4 reserves some data/control operations for Foundation-signed
+applications; calling a denied operation from an independently signed app can
+terminate it, so this build does not make those calls.
+
+The boundary is narrower than this app long assumed. It is not "which subsystem"
+but "does the message carry a `permissionGroup`": a message that has one is
+`thirdParty`-callable, and one that does not is Foundation-only. The QR scanner,
+file picker and PIN prompt all go through `ShowModal`, which has a group — see
+the note below. QuantumLink app data does not.
 
 Available in a developer-signed build:
 
@@ -142,3 +147,21 @@ foundation pack
 
 The default debug build optimizes dependencies because Monero signing and
 CryptoNight are too slow for an unoptimized Cortex-A5 build.
+
+### Note on CryptoNight
+
+The wallet2 txset chacha key is `cn_slow_hash` v0, taken from upstream
+[`cuprate-cryptonight`](https://github.com/Cuprate/cuprate/tree/main/cryptonight)
+with no patches.
+
+Earlier versions carried a hand-patched `no_std` fork under `vendor/`, on the
+belief that the crate could not otherwise build for `armv7a-unknown-xous-elf`.
+That was wrong — **KeyOS is a Rust `std` target** (this app uses `std::thread`,
+`std::sync::Mutex` and `std::time` throughout), so the upstream crate builds and
+runs on device unmodified, `f64::sqrt()` and `std::io::Write` included. The fork
+was ~2,800 lines of vendored cryptography with no reason to exist, and it is
+gone.
+
+`monero::txset::cryptonight_tests` pins the official Monero `tests-slow.txt`
+vectors so the KDF stays correct across dependency bumps, whichever crate
+supplies it.

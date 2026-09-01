@@ -58,11 +58,12 @@ monero-seed = { git = "https://github.com/kayabaNerve/monero-wallet-util", rev =
 # derivation runs on device + sim.
 zeroize = { version = "1", default-features = false, features = ["alloc"] }
 
-# --- Decryption + signing — now ALL-TARGET (runs on the device too) -------
+# --- Decryption + signing — ALL-TARGET (runs on the device too) -----------
 # wallet2 unsigned_tx_set decryption needs cn_slow_hash (CryptoNight) for the
-# chacha key. Vendored no_std CryptoNight (parity-tested byte-for-byte vs
-# cuprate-cryptonight) so it builds + runs on xous, not just host/sim.
-cryptonight-noxous = { path = "vendor/cryptonight-noxous" }
+# chacha key. Upstream Cuprate, used as-is: KeyOS is a std target, so the crate
+# needs no no_std patch and there is nothing to vendor. (This was previously a
+# hand-patched no_std copy under vendor/; that patch was never necessary.)
+cuprate-cryptonight = { git = "https://github.com/Cuprate/cuprate", rev = "0b64b33dcd7f50168a5ba4d6d58a5a210b1cbc59" }
 chacha20 = { version = "0.9", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 # RingCT/CLSAG + Bulletproof+ signing (serai / monero-oxide). no_std (alloc);
