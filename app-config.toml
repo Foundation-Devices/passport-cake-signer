@@ -9,7 +9,11 @@ theme = "resources/theme.json"
 # Stable identity: changing this changes every app-seed-derived Monero wallet.
 app-id = "0x63616b652d786d722d7369676e657221"
 version = "0.2.1"
-min-keyos-version = "1.4.0"
+# MUST carry the pre-release suffix. app-manager compares this as a semver
+# Version, and a pre-release sorts BELOW its release — so a plain "1.4.0" floor
+# refuses to launch on every 1.4.0 beta with "the app requires a newer KeyOS
+# version", which is what users are actually running.
+min-keyos-version = "1.4.0-beta2"
 
 [publisher]
 name = "Foundation Devices"

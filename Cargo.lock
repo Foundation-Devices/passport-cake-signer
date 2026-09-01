@@ -137,6 +137,7 @@ dependencies = [
  "hex",
  "once_cell",
  "rkyv",
+ "semver",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1053,7 +1054,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "log",
  "num-derive",
@@ -1581,12 +1582,6 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "foldhash"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
-
-[[package]]
-name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
@@ -1693,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-themes"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "components",
@@ -1719,7 +1714,7 @@ dependencies = [
 
 [[package]]
 name = "fs"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bitflags 2.13.1",
  "log",
@@ -2020,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "gui-server-api"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "app-manifest",
  "hex-literal",
@@ -2079,24 +2074,13 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
-dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash 0.1.5",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash 0.2.0",
+ "foldhash",
 ]
 
 [[package]]
@@ -2105,7 +2089,9 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "foldhash 0.2.0",
+ "allocator-api2",
+ "equivalent",
+ "foldhash",
 ]
 
 [[package]]
@@ -3569,11 +3555,11 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.13.0"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
+checksum = "0d317b4b9eb398e6acce275758ec6125535505e7a146fb1a9b8bda2451b0ff4c"
 dependencies = [
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5632,7 +5618,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "security"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bip39",
  "crypto",
@@ -5760,7 +5746,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fs",
  "jiff",

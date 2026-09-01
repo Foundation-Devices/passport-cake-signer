@@ -86,15 +86,34 @@ Available in a developer-signed build:
 - transaction parsing, review, and signing
 - signed transaction and key-image QR display
 - Launcher universal-QR handoff for `xmr-txunsigned` transactions
+- launching the system QR scanner from inside this app, for seed import and for
+  scanning an unsigned transaction or output export straight off Cake
 - manual address derivation/verification by account and subaddress index
 - fixed-name Airlock file exchange and persistent app data
 
 Unavailable until KeyOS exposes a third-party-safe API:
 
 - Cake-over-QuantumLink requests and responses
-- launching the system QR scanner from inside this app (Launcher can still
-  scan and hand a matching `xmr-txunsigned` UR to Cake Signer)
-- launching the system file picker from this app
+
+### Note on the QR scanner
+
+Earlier builds reported "QR scanning is not available to independently signed
+apps on KeyOS 1.4". That was wrong, and it is fixed.
+
+The scanner is **not** reached through `NavigateTo` — that is the one message in
+the `os/gui-server` manifest with no `permissionGroup`, which is what makes it
+Foundation-only, and it is correctly absent from this app's manifest.
+`open_qr_scanner` instead brokers the scanner as a **modal**, so its entire
+permission requirement is `MessageAllowed<ShowModal>`:
+
+```toml
+ShowModal = { id = 44, permissionGroup = "ui-and-input.brokered-modal", approval = "grantOnFirstUse" }
+```
+
+A `permissionGroup` is what makes a message `thirdParty`, and `ShowModal` ships
+in the `gui-app` permission template this app already uses. The same is true of
+`select_file` and `verify_pin`, which share the identical bound — so the system
+file picker is available on the same terms, should this app ever want it.
 
 For file exchange, disconnect USB before the app accesses Airlock:
 
