@@ -77,20 +77,6 @@ slint-keyos-platform-build = { path = ".foundation-sdk/current/lib/keyos/slint-k
 
 [patch.crates-io]
 getrandom = { path = ".foundation-sdk/current/lib/keyos/imports/getrandom" }
-# UI2's host-side theme crate declares a broad crates.io Slint range. Pin its
-# graph to the exact Foundation fork shipped by the 1.4 SDK so two Slint ABIs
-# cannot enter the device link.
-slint = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-slint-build = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-slint-macros = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-common = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-compiler = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-core = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-core-macros = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-backend-selector = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-i-slint-renderer-software = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-const-field-offset = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
-const-field-offset-macro = { git = "https://github.com/Foundation-Devices/slint.git", tag = "v1.17.0-foundation2" }
 
 [profile.dev]
 opt-level = 2
