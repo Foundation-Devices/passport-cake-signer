@@ -184,6 +184,25 @@ mod imp {
         }
     }
 
+    /// Domain separator for [`signing_seed`]. Changing it changes every
+    /// signature's nonces, so bump the version suffix if it ever must change.
+    const SIGNING_SEED_DOMAIN: &[u8] = b"passport-cake-signer/ovk-and-clsag-rng/v1";
+
+    /// Deterministic per-transaction secret: Keccak-256 over a domain separator,
+    /// the spend secret and the decrypted tx set. Deterministic, so the same tx
+    /// set always signs the same way, but unknowable without the spend key.
+    /// Used as the outgoing view key and the seed of the signing RNG.
+    pub(crate) fn signing_seed(keys: &MoneroKeys, pt: &[u8]) -> Zeroizing<[u8; 32]> {
+        let spend = Zeroizing::new(keys.spend_secret_bytes());
+        let mut input = Zeroizing::new(Vec::with_capacity(
+            SIGNING_SEED_DOMAIN.len() + spend.len() + pt.len(),
+        ));
+        input.extend_from_slice(SIGNING_SEED_DOMAIN);
+        input.extend_from_slice(&spend[..]);
+        input.extend_from_slice(pt);
+        Zeroizing::new(keccak256(&input))
+    }
+
     pub fn sign_unsigned_tx(
         unsigned_file: &[u8],
         keys: &MoneroKeys,
@@ -258,11 +277,15 @@ mod imp {
 
         let fee_rate = monero_wallet::interface::FeeRate::new(fee_per_weight, 10_000)
             .ok_or(SignError::Serai("fee rate".into()))?;
-        let ovk = keccak256(&pt);
+        // The outgoing view key and the CLSAG nonce RNG must be secret. Both
+        // come from a seed keyed by the spend secret (SFT-8536): the tx set is
+        // written by the phone, so a seed derived from it alone would let the
+        // phone recompute the nonce and solve for the spend key.
+        let seed = signing_seed(keys, &pt);
 
         let signable = SignableTransaction::new(
             RctType::ClsagBulletproofPlus,
-            Zeroizing::new(ovk),
+            Zeroizing::new(*seed),
             inputs,
             payments,
             change_out,
@@ -273,7 +296,7 @@ mod imp {
 
         let spend_scalar =
             curve25519_dalek::scalar::Scalar::from_bytes_mod_order(keys.spend_secret_bytes());
-        let mut rng = ChaCha20Rng::from_seed(ovk);
+        let mut rng = ChaCha20Rng::from_seed(*seed);
         let tx = signable
             .sign(&mut rng, &Zeroizing::new(SeraiScalar::from(spend_scalar)))
             .map_err(|e| SignError::Serai(format!("sign: {e:?}")))?;
@@ -421,6 +444,32 @@ mod port_tests {
             spend_secret,
             view_secret,
         }
+    }
+
+    /// SFT-8536 regression: the signing seed (OVK and CLSAG RNG) must not be
+    /// computable from the tx set alone, which the phone writes.
+    #[test]
+    fn signing_seed_depends_on_the_spend_secret() {
+        use curve25519_dalek::scalar::Scalar;
+        let keys = fixture_keys();
+        let view_secret = keys.view_secret_bytes();
+        let pt = crate::monero::txset::decrypt(DEMO_UNSIGNED, &view_secret).expect("decrypt fixture");
+
+        let seed = super::imp::signing_seed(&keys, &pt);
+        // Not the old, phone-computable derivation.
+        assert_ne!(*seed, crate::monero::keccak256(&pt));
+        // Deterministic for the same key and tx set.
+        assert_eq!(*seed, *super::imp::signing_seed(&keys, &pt));
+        // A different spend key (same view key) gives a different seed.
+        let other = MoneroKeys {
+            spend_secret: Scalar::from_bytes_mod_order([0x22u8; 32]),
+            view_secret: keys.view_secret,
+        };
+        assert_ne!(*seed, *super::imp::signing_seed(&other, &pt));
+        // A different tx set gives a different seed.
+        let mut pt2 = pt.clone();
+        pt2[0] ^= 1;
+        assert_ne!(*seed, *super::imp::signing_seed(&keys, &pt2));
     }
 
     #[test]
